@@ -241,7 +241,9 @@
         <details class="group">
           <summary><span class="group-title">Segurança</span><span class="group-hint">Verificação em duas etapas</span></summary>
           <div class="group-body">
-            <p id="mfa-status" class="account-note"></p>
+            <p class="account-note">Troque a senha quando quiser. Você vai precisar informar a senha atual.</p>
+            <button id="pw-open" class="btn" type="button">Alterar senha</button>
+            <p id="mfa-status" class="account-note spaced"></p>
             <button id="mfa-enable" class="btn" type="button" hidden>Ativar verificação em duas etapas</button>
             <button id="mfa-disable" class="btn danger" type="button" hidden>Desativar verificação em duas etapas</button>
           </div>
@@ -439,6 +441,31 @@
         <button id="goal-delete" class="btn danger" type="button" hidden>Excluir</button>
         <button id="goal-cancel" class="btn" type="button">Cancelar</button>
         <button id="goal-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="pw-sheet" class="sheet" aria-labelledby="pw-title">
+    <form id="pw-form" method="dialog" novalidate>
+      <h3 id="pw-title">Alterar senha</h3>
+
+      <label for="pw-current">Senha atual</label>
+      <input id="pw-current" type="password" autocomplete="current-password" maxlength="72" required>
+
+      <label for="pw-new">Nova senha</label>
+      <input id="pw-new" type="password" autocomplete="new-password" maxlength="72" required>
+
+      <label for="pw-confirm">Confirmar nova senha</label>
+      <input id="pw-confirm" type="password" autocomplete="new-password" maxlength="72" required>
+
+      <ul id="pw-rules" class="rules" aria-label="Requisitos da nova senha"></ul>
+      <label class="check show-password"><input type="checkbox" id="pw-show"> Mostrar senhas</label>
+
+      <p id="pw-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="pw-cancel" class="btn" type="button">Cancelar</button>
+        <button id="pw-submit" class="btn primary" type="submit">Alterar senha</button>
       </div>
     </form>
   </dialog>

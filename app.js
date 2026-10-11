@@ -84,6 +84,9 @@
     if (/password should (be at least|contain)/i.test(msg)) return 'A senha não atende às regras de segurança. Confira os requisitos abaixo do campo.';
     if (/email not confirmed/i.test(msg)) return 'Confirme seu e-mail pelo link que enviamos e tente de novo.';
     if (/invalid totp|mfa verification failed|invalid.*code/i.test(msg)) return 'Código incorreto. Confira o app e tente de novo.';
+    if (/aal2/i.test(msg)) return 'Para trocar a senha, confirme o código das duas etapas: saia e entre de novo.';
+    if (/current.?password|incorrect.*password/i.test(msg)) return 'Senha atual incorreta.';
+    if (/different from the old/i.test(msg)) return 'A nova senha precisa ser diferente da atual.';
     if (/rate limit/i.test(msg)) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
     if (/failed to fetch|network/i.test(msg)) return 'Sem conexão. Verifique a internet e tente de novo.';
     return msg || 'Algo deu errado. Tente de novo.';
@@ -126,17 +129,18 @@
     renderPasswordRules();
   }
 
-  // Requisitos da senha, atualizados a cada tecla (só no cadastro).
-  function renderPasswordRules() {
-    if (!state.signupMode) return;
-    const list = Password.rules($('auth-password').value, $('auth-confirm').value);
-    const ul = $('password-rules');
+  // Lista de requisitos da senha, atualizada a cada tecla.
+  function renderRules(ul, password, confirm) {
     ul.replaceChildren();
-    for (const r of list) {
+    for (const r of Password.rules(password, confirm)) {
       const li = el('li', r.ok ? 'ok' : '');
       li.append(el('span', 'rule-mark'), el('span', '', r.label), el('span', 'sr-only', r.ok ? ' (atendido)' : ' (pendente)'));
       ul.append(li);
     }
+  }
+
+  function renderPasswordRules() {
+    if (state.signupMode) renderRules($('password-rules'), $('auth-password').value, $('auth-confirm').value);
   }
 
   $('auth-password').addEventListener('input', renderPasswordRules);
@@ -1252,6 +1256,59 @@
     });
     $('bill-pay').disabled = false;
     if (ok) billSheet.close();
+  });
+
+  /* ---------- Segurança: alterar a senha ---------- */
+
+  const pwSheet = $('pw-sheet');
+  const pwFields = ['pw-current', 'pw-new', 'pw-confirm'];
+
+  function renderChangeRules() {
+    renderRules($('pw-rules'), $('pw-new').value, $('pw-confirm').value);
+  }
+
+  $('pw-open').addEventListener('click', () => {
+    pwFields.forEach((id) => { $(id).value = ''; $(id).type = 'password'; });
+    $('pw-show').checked = false;
+    $('pw-error').hidden = true;
+    renderChangeRules();
+    pwSheet.showModal();
+    $('pw-current').focus();
+  });
+
+  $('pw-cancel').addEventListener('click', () => pwSheet.close());
+  $('pw-new').addEventListener('input', renderChangeRules);
+  $('pw-confirm').addEventListener('input', renderChangeRules);
+  $('pw-show').addEventListener('change', (e) => {
+    pwFields.forEach((id) => { $(id).type = e.target.checked ? 'text' : 'password'; });
+  });
+
+  $('pw-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('pw-error');
+    errorBox.hidden = true;
+    const fail = (message, field) => { errorBox.textContent = message; errorBox.hidden = false; $(field).focus(); };
+
+    const current = $('pw-current').value;
+    const next = $('pw-new').value;
+    const confirmation = $('pw-confirm').value;
+    if (!current) return fail('Digite a senha atual.', 'pw-current');
+    const missing = Password.rules(next, confirmation).filter((r) => !r.ok);
+    if (missing.some((r) => r.id !== 'match')) return fail('A nova senha ainda não atende a todos os requisitos listados.', 'pw-new');
+    if (missing.length > 0) return fail('As senhas não são iguais.', 'pw-confirm');
+    if (next === current) return fail('A nova senha precisa ser diferente da atual.', 'pw-new');
+
+    const button = $('pw-submit');
+    button.disabled = true;
+    const { error } = await sb.auth.updateUser({ password: next, current_password: current });
+    button.disabled = false;
+    if (error) {
+      const wrongCurrent = /current.?password|incorrect.*password/i.test(error.message || '');
+      return fail(friendlyError(error), wrongCurrent ? 'pw-current' : 'pw-new');
+    }
+    pwFields.forEach((id) => { $(id).value = ''; });
+    pwSheet.close();
+    toast('Senha alterada');
   });
 
   /* ---------- Segurança: ativar e desativar 2FA ---------- */

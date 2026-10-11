@@ -70,6 +70,12 @@
         rpc: async () => ({ error: null }),
         auth: {
           onAuthStateChange(fn) { setTimeout(() => fn(window.__noSession ? 'SIGNED_OUT' : 'SIGNED_IN', window.__noSession ? null : { user: { id: 'u1', email: 'marcelo@exemplo.com' } }), 0); },
+          updateUser: async ({ password, current_password }) => {
+            window.__lastUpdate = { password, current_password };
+            if (!current_password) return { error: { message: 'Current password required when setting new password' } };
+            if (current_password !== 'Senha#Atual1') return { error: { message: 'Invalid current password' } };
+            return { data: {}, error: null };
+          },
           signOut: async () => ({}),
           signUp: async () => ({ data: {}, error: null }),
           signInWithPassword: async () => ({ error: null }),
