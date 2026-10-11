@@ -24,6 +24,7 @@
     securityShown: false,
     hints: null,
     hasAnyTx: true,
+    pwFactorId: null,
     shortcut: Quick.parseShortcut(location.search),
     categoryTouched: false,
     editingGoal: null,
@@ -1267,10 +1268,16 @@
     renderRules($('pw-rules'), $('pw-new').value, $('pw-confirm').value);
   }
 
-  $('pw-open').addEventListener('click', () => {
+  $('pw-open').addEventListener('click', async () => {
     pwFields.forEach((id) => { $(id).value = ''; $(id).type = 'password'; });
+    $('pw-otp').value = '';
     $('pw-show').checked = false;
     $('pw-error').hidden = true;
+    // Com duas etapas ativas, a troca também pede o código do autenticador.
+    let factor = null;
+    try { factor = await verifiedFactor(); } catch (err) { /* sem informação: segue sem o campo */ }
+    state.pwFactorId = factor ? factor.id : null;
+    $('pw-otp-row').hidden = !factor;
     renderChangeRules();
     pwSheet.showModal();
     $('pw-current').focus();
@@ -1298,8 +1305,19 @@
     if (missing.length > 0) return fail('As senhas não são iguais.', 'pw-confirm');
     if (next === current) return fail('A nova senha precisa ser diferente da atual.', 'pw-new');
 
+    const otp = $('pw-otp').value.replace(/\s/g, '');
+    if (state.pwFactorId && !/^\d{6}$/.test(otp)) return fail('Digite os 6 dígitos do código do autenticador.', 'pw-otp');
+
     const button = $('pw-submit');
     button.disabled = true;
+    if (state.pwFactorId) {
+      // Confere o código agora, no servidor, antes de trocar a senha.
+      const { error: otpError } = await sb.auth.mfa.challengeAndVerify({ factorId: state.pwFactorId, code: otp });
+      if (otpError) {
+        button.disabled = false;
+        return fail(friendlyError(otpError), 'pw-otp');
+      }
+    }
     const { error } = await sb.auth.updateUser({ password: next, current_password: current });
     button.disabled = false;
     if (error) {
@@ -1307,6 +1325,7 @@
       return fail(friendlyError(error), wrongCurrent ? 'pw-current' : 'pw-new');
     }
     pwFields.forEach((id) => { $(id).value = ''; });
+    $('pw-otp').value = '';
     pwSheet.close();
     toast('Senha alterada');
   });

@@ -236,7 +236,8 @@ input:focus, select:focus { border-color: var(--focus); }
   transform: rotate(45deg);
 }
 .show-password { margin-top: 0.6rem; }
-#mfa-code, #mfa-enroll-code { font-family: var(--serif); font-size: 1.5rem; letter-spacing: 0.35em; text-align: center; }
+.otp-note { margin: 0.35rem 0 0; font-size: 0.8125rem; }
+#mfa-code, #mfa-enroll-code, #pw-otp { font-family: var(--serif); font-size: 1.5rem; letter-spacing: 0.35em; text-align: center; }
 
 /* ---------- App ---------- */
 

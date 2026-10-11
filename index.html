@@ -459,6 +459,12 @@
       <input id="pw-confirm" type="password" autocomplete="new-password" maxlength="72" required>
 
       <ul id="pw-rules" class="rules" aria-label="Requisitos da nova senha"></ul>
+
+      <div id="pw-otp-row" hidden>
+        <label for="pw-otp">Código do autenticador</label>
+        <input id="pw-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*">
+        <p class="account-note otp-note">Abra o app autenticador e digite o código de 6 dígitos atual.</p>
+      </div>
       <label class="check show-password"><input type="checkbox" id="pw-show"> Mostrar senhas</label>
 
       <p id="pw-error" class="form-error" role="alert" hidden></p>
