@@ -24,6 +24,8 @@
     securityShown: false,
     hints: null,
     hasAnyTx: true,
+    trendRows: [],
+    trendSel: null,
     pwFactorId: null,
     shortcut: Quick.parseShortcut(location.search),
     categoryTouched: false,
@@ -334,6 +336,25 @@
     state.hasAnyTx = any.data.length > 0;
   }
 
+  // Lançamentos dos últimos 6 meses (só tipo, valor e data), para o gráfico de evolução.
+  async function loadTrend() {
+    const since = Trend.windowStart(new Date(), 6);
+    const rows = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('type, amount, occurred_on')
+        .gte('occurred_on', since)
+        .order('occurred_on')
+        .order('id')
+        .range(from, from + 999);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+    state.trendRows = rows;
+  }
+
   async function loadRecurring() {
     const { data, error } = await sb
       .from('recurring_transactions')
@@ -426,6 +447,11 @@
     } catch (err) {
       state.hints = null;
     }
+    try {
+      await loadTrend();
+    } catch (err) {
+      state.trendRows = [];
+    }
     render();
     renderSecurityOnce();
     openShortcut();
@@ -467,7 +493,125 @@
     renderBills();
     renderGoals();
     renderOnboarding();
+    renderTrend();
   }
+
+  /* ---------- Evolução mensal ---------- */
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const shortMonth = new Intl.DateTimeFormat('pt-BR', { month: 'short' });
+
+  function svgEl(tag, attrs, cls) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    if (cls) node.setAttribute('class', cls);
+    return node;
+  }
+
+  function monthShort(m) { return `${new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(new Date(m.year, m.month, 1)).replace('.', '')}/${String(m.year).slice(2)}`; }
+  function monthName(m) { return monthFmt.format(new Date(m.year, m.month, 1)); }
+
+  // Coluna com o topo arredondado (4px) e a base reta, como pede o padrão dos gráficos.
+  function columnPath(x, y, w, h) {
+    const r = Math.min(4, h, w / 2);
+    return `M${x} ${y + h}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + h}Z`;
+  }
+
+  function fillTrendReadout(m) {
+    const box = $('trend-readout');
+    box.replaceChildren();
+    box.append(el('span', 'month', monthName(m)));
+    const values = el('span', 'values');
+    for (const [label, value] of [['Receitas', m.income], ['Despesas', m.expense], ['Saldo', m.balance]]) {
+      const item = el('span');
+      item.append(`${label} `, el('b', '', brl.format(value)));
+      values.append(item);
+    }
+    box.append(values);
+  }
+
+  function selectTrendMonth(i) {
+    state.trendSel = i;
+    document.querySelectorAll('#trend-chart .hl').forEach((n, k) => n.classList.toggle('on', k === i));
+    document.querySelectorAll('#trend-chart .month-text').forEach((n, k) => n.classList.toggle('on', k === i));
+    fillTrendReadout(state.trendSeries[i]);
+  }
+
+  function drawTrendChart(series) {
+    const W = 340, H = 196, L = 34, R = 4, T = 8, B = 26;
+    const plotW = W - L - R, plotH = H - T - B;
+    const scale = Trend.niceScale(Math.max(...series.map((m) => Math.max(m.income, m.expense))));
+    const y = (v) => T + plotH - (v / scale.max) * plotH;
+    const slot = plotW / series.length;
+    const barW = 16, gap = 2, pairW = barW * 2 + gap;
+
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'group', 'aria-label': 'Receitas e despesas dos últimos 6 meses' });
+    for (const tick of scale.ticks) {
+      svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(tick), y2: y(tick) }, 'grid'));
+      const t = svgEl('text', { x: L - 6, y: y(tick) + 3.5, 'text-anchor': 'end' }, 'axis-text');
+      t.textContent = Trend.compact(tick);
+      svg.append(t);
+    }
+    series.forEach((m, i) => {
+      const sx = L + i * slot;
+      svg.append(svgEl('rect', { x: sx + 2, y: T, width: slot - 4, height: plotH, rx: 6 }, 'hl'));
+      const x0 = sx + (slot - pairW) / 2;
+      for (const [value, dx, cls] of [[m.income, 0, 'bar-income'], [m.expense, barW + gap, 'bar-expense']]) {
+        if (value <= 0) continue;
+        const h = Math.max(2, (value / scale.max) * plotH);
+        svg.append(svgEl('path', { d: columnPath(x0 + dx, T + plotH - h, barW, h) }, cls));
+      }
+      const label = svgEl('text', { x: sx + slot / 2, y: H - 8, 'text-anchor': 'middle' }, 'month-text');
+      label.textContent = shortMonth.format(new Date(m.year, m.month, 1)).replace('.', '');
+      svg.append(label);
+    });
+    // Áreas de toque: maiores que as barras, com leitura por teclado.
+    series.forEach((m, i) => {
+      const hit = svgEl('rect', { x: L + i * slot, y: T, width: slot, height: plotH + B - 4, tabindex: 0, role: 'button', rx: 6 }, 'hit');
+      hit.setAttribute('aria-label',
+        `${monthName(m)}: receitas ${brl.format(m.income)}, despesas ${brl.format(m.expense)}, saldo ${brl.format(m.balance)}`);
+      hit.addEventListener('click', () => selectTrendMonth(i));
+      hit.addEventListener('focus', () => selectTrendMonth(i));
+      hit.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') selectTrendMonth(i); });
+      svg.append(hit);
+    });
+    $('trend-chart').replaceChildren(svg);
+  }
+
+  function fillTrendTable(series) {
+    const table = $('trend-table');
+    table.replaceChildren();
+    const head = el('tr');
+    for (const h of ['Mês', 'Receitas', 'Despesas', 'Saldo']) head.append(el('th', '', h));
+    const thead = el('thead');
+    thead.append(head);
+    table.append(thead);
+    const body = el('tbody');
+    for (const m of series) {
+      const row = el('tr');
+      row.append(el('td', '', monthShort(m)), el('td', '', brl.format(m.income)), el('td', '', brl.format(m.expense)), el('td', '', brl.format(m.balance)));
+      body.append(row);
+    }
+    table.append(body);
+  }
+
+  function renderTrend() {
+    const series = Trend.monthlySeries(state.trendRows, new Date());
+    $('trend').hidden = !Trend.hasData(series);
+    if (!Trend.hasData(series)) return;
+    state.trendSeries = series;
+    drawTrendChart(series);
+    fillTrendTable(series);
+    selectTrendMonth(state.trendSel !== null && state.trendSel < series.length ? state.trendSel : series.length - 1);
+  }
+
+  $('trend-toggle').addEventListener('click', () => {
+    const showTable = $('trend-table-wrap').hidden;
+    $('trend-table-wrap').hidden = !showTable;
+    $('trend-chart').hidden = showTable;
+    $('trend-readout').hidden = showTable;
+    $('trend-toggle').textContent = showTable ? 'Ver gráfico' : 'Ver em tabela';
+  });
 
   // Quem ainda não tem nenhum dado vê os primeiros passos no Resumo.
   function categoriesSeen() {
@@ -2044,6 +2188,7 @@
       state.bills = [];
       state.goals = [];
       state.hints = null;
+      state.trendRows = [];
       state.securityShown = false;
       state.suggestions = [];
       showAuth();

@@ -1,4 +1,4 @@
-const CACHE = 'caixa-v8';
+const CACHE = 'caixa-v9';
 const SHELL = [
   './',
   'index.html',
@@ -9,6 +9,7 @@ const SHELL = [
   'exporter.js',
   'quick.js',
   'password.js',
+  'trend.js',
   'app.js',
   'manifest.webmanifest',
   'fonts/plex-serif-400.woff',

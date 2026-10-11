@@ -142,6 +142,22 @@
           <ul id="breakdown" class="breakdown"></ul>
           <p id="breakdown-empty" class="empty" hidden>Nenhuma despesa neste mês. Registre na aba Lançamentos.</p>
         </section>
+
+        <section id="trend" class="panel" hidden>
+          <h3 class="panel-title">Últimos 6 meses</h3>
+          <div class="trend-box">
+            <div class="legend">
+              <span class="legend-item"><i class="swatch income" aria-hidden="true"></i>Receitas</span>
+              <span class="legend-item"><i class="swatch expense" aria-hidden="true"></i>Despesas</span>
+            </div>
+            <div id="trend-readout" class="trend-readout" aria-live="polite"></div>
+            <div id="trend-chart" class="trend-chart"></div>
+            <div id="trend-table-wrap" class="trend-table-wrap" hidden>
+              <table id="trend-table" class="trend-table"></table>
+            </div>
+            <button id="trend-toggle" class="btn link small" type="button">Ver em tabela</button>
+          </div>
+        </section>
       </section>
 
       <section id="view-list" class="view" data-view="list" hidden>
@@ -574,6 +590,7 @@
   <script src="exporter.js"></script>
   <script src="quick.js"></script>
   <script src="password.js"></script>
+  <script src="trend.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

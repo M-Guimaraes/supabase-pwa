@@ -9,11 +9,11 @@ Estados possíveis: pendente, em andamento, concluído.
 | 1A | Importar extrato (CSV e OFX) | 1 | concluído |
 | 4 | Gastos recorrentes e assinaturas | 2 | implementado, falta testar no celular |
 | 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | implementado, falta testar no celular |
-| 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV e metas implementados, falta testar; offline e casais pendentes |
+| 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV, metas e gráfico de evolução (6 meses) implementados, falta testar; offline pendente; casais em segundo plano |
 | 2 | Menos digitação manual | 5 | implementado, falta testar no celular |
 | 5 | Segurança e controle dos dados | 6 | implementado no app; falta aplicar a migration das duas etapas e ligar a proteção de senhas vazadas |
 | 6 | Preço baixo e simplicidade | 7 | parcial: onboarding e telas enxutas feitos; falta conferir limites do plano e testar com pessoas |
-| 1B | Sincronização automática (Open Finance) | 8 | pendente |
+| 1B | Sincronização automática (Open Finance) | 8 | segundo plano (backlog) |
 
 A numeração segue a ordem da pesquisa; a prioridade é a ordem sugerida de execução.
 
@@ -51,7 +51,7 @@ Pronto quando: dá para ver quanto resta de cada categoria no mês.
 
 ## 7. Itens menores: CSV, metas, offline e casais
 
-Status: em andamento. Exportar CSV e metas implementados em 11/10/2026, faltam testar no celular. Offline e casais pendentes.
+Status: em andamento. Exportar CSV e metas implementados em 11/10/2026, faltam testar no celular. Gráfico de evolução dos últimos 6 meses implementado em 11/10/2026. Offline pendente; casais em segundo plano.
 
 Feito: exportação em CSV (`;`, vírgula decimal, UTF-8 com BOM, despesas negativas, proteção contra fórmulas em planilhas) do mês ou de tudo; tabela `goals` com RLS, tela em Ajustes com barra de progresso, "guardar mais" e valor sugerido por mês até o prazo. Testes em `tests/exporter.test.js`.
 
