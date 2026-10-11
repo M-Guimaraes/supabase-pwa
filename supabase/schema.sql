@@ -261,3 +261,28 @@ $$;
 
 revoke all on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- Regras de classificação: "se a descrição contém <pattern>, a categoria é <category_id>".
+-- O pattern é guardado já normalizado (minúsculas, sem acento nem pontuação).
+create table public.category_rules (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  pattern text not null check (char_length(pattern) between 2 and 60),
+  category_id uuid not null references public.categories (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (user_id, pattern)
+);
+create index category_rules_user_id_idx on public.category_rules (user_id);
+create index category_rules_category_id_idx on public.category_rules (category_id);
+alter table public.category_rules enable row level security;
+create policy "category_rules_select_own" on public.category_rules
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "category_rules_insert_own" on public.category_rules
+  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "category_rules_update_own" on public.category_rules
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "category_rules_delete_own" on public.category_rules
+  for delete to authenticated using (user_id = (select auth.uid()));
+create policy "require_aal2_if_enrolled" on public.category_rules
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));

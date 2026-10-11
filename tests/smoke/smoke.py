@@ -125,6 +125,35 @@ with sync_playwright() as p:
     with page.expect_download() as d: page.click('#backup-download')
     j = json.load(open(d.value.path()))
     check(j['app'] == 'Caixa' and len(j['data']['transactions']) == 5, 'backup JSON com %d lançamentos' % len(j['data']['transactions']))
+    # regras de categoria
+    go_settings(page)
+    page.fill('#rule-pattern', 'a'); page.click('#rule-add')
+    check('pelo menos' in page.inner_text('#rules-error'), 'regra curta demais é recusada')
+    page.fill('#rule-pattern', 'Padaria São João'); page.select_option('#rule-category', 'cat-mercado'); page.click('#rule-add'); page.wait_for_timeout(400)
+    check(page.locator('#rules-list li').count() == 1 and 'padaria sao joao' in page.inner_text('#rules-list'), 'regra criada e normalizada')
+    page.fill('#rule-pattern', 'padaria  sao joao'); page.click('#rule-add'); page.wait_for_timeout(300)
+    check(page.locator('#rules-list li').count() == 1, 'não duplica a mesma regra: ' + page.inner_text('#rules-error'))
+    fab(page); page.fill('#tx-desc', 'PADARIA SAO JOAO LTDA'); page.wait_for_timeout(150)
+    check(page.input_value('#tx-category') == 'cat-mercado', 'regra sugere categoria ao digitar')
+    page.click('#tx-cancel')
+    # importação classificada por regra
+    ofx = ('<OFX><BANKTRANLIST>'
+           '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261005<TRNAMT>-18.50<FITID>R1<MEMO>PADARIA SAO JOAO 0042</STMTTRN>'
+           '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261006<TRNAMT>-30.00<FITID>R2<MEMO>LOJA SEM REGRA</STMTTRN>'
+           '</BANKTRANLIST></OFX>')
+    go_settings(page); page.click('#import-open'); page.wait_for_selector('#import-sheet[open]')
+    page.set_input_files('#import-file', files=[{'name': 'e.ofx', 'mimeType': 'application/x-ofx', 'buffer': ofx.encode()}])
+    page.wait_for_selector('#import-list li'); page.wait_for_timeout(300)
+    check(page.locator('#import-list select').first.input_value() == 'cat-mercado', 'importação aplica a regra')
+    check('por regra' in page.locator('#import-list li').first.inner_text(), 'linha indica categoria por regra')
+    check(page.locator('#import-list select').nth(1).input_value() == '', 'sem regra fica sem categoria')
+    page.click('#import-cancel')
+    # aplicar regras aos já lançados
+    page.evaluate("__db.transactions.push({id:'x1',type:'expense',amount:9,description:'Padaria Sao Joao',category_id:null,occurred_on:'2026-10-02',created_at:'z',external_id:null,user_id:'u1'})")
+    go_settings(page); page.click('#rule-apply'); page.wait_for_timeout(500)
+    check(page.evaluate("__db.transactions.find(t => t.id === 'x1').category_id") == 'cat-mercado', 'aplicar regras classifica lançamento sem categoria')
+    page.click('#rules-list .remove'); page.wait_for_timeout(300)
+    check(page.locator('#rules-list li').count() == 0, 'regra excluída')
     # alterar senha
     go_settings(page)
     page.click('#pw-open'); page.wait_for_selector('#pw-sheet[open]')

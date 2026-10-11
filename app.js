@@ -21,6 +21,8 @@
     budgets: [],
     bills: [],
     goals: [],
+    rules: [],
+    rulesReady: true,
     securityShown: false,
     hints: null,
     hasAnyTx: true,
@@ -99,6 +101,8 @@
     if (/current.?password|incorrect.*password/i.test(msg)) return 'Senha atual incorreta.';
     if (/different from the old/i.test(msg)) return 'A nova senha precisa ser diferente da atual.';
     if (/rate limit/i.test(msg)) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
+    if (/category_rules|relation .* does not exist|schema cache/i.test(msg)) return 'As regras ainda não foram ativadas no banco. Aplique o SQL de regras no Supabase.';
+    if (/category_rules_user_id_pattern_key|duplicate key/i.test(msg)) return 'Já existe uma regra para esse texto.';
     if (/failed to fetch|network/i.test(msg)) return 'Sem conexão. Verifique a internet e tente de novo.';
     return msg || 'Algo deu errado. Tente de novo.';
   }
@@ -325,6 +329,19 @@
     state.bills = data.map((b) => ({ ...b, amount: Number(b.amount) }));
   }
 
+  // Separado do resto: se a tabela de regras ainda não existe, o app segue funcionando sem elas.
+  async function loadRules() {
+    const { data, error } = await sb.from('category_rules').select('id, pattern, category_id').order('created_at');
+    if (error) {
+      if (Offline.isNetworkError(error)) throw error;
+      state.rules = [];
+      state.rulesReady = false;
+      return;
+    }
+    state.rules = data;
+    state.rulesReady = true;
+  }
+
   async function loadGoals() {
     const { data, error } = await sb
       .from('goals')
@@ -454,6 +471,7 @@
       budgets: state.budgets,
       bills: state.bills,
       goals: state.goals,
+      rules: state.rules,
       trendRows: state.trendRows,
       hasAnyTx: state.hasAnyTx,
     });
@@ -473,6 +491,7 @@
     state.budgets = d.budgets || [];
     state.bills = d.bills || [];
     state.goals = d.goals || [];
+    state.rules = d.rules || [];
     state.trendRows = d.trendRows || [];
     state.hasAnyTx = d.hasAnyTx !== false;
     state.hints = null;
@@ -569,7 +588,7 @@
       if (n > 0) toast(n === 1 ? '1 lançamento enviado' : `${n} lançamentos enviados`);
     });
     try {
-      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals()]);
+      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals(), loadRules()]);
     } catch (err) {
       if (Offline.isNetworkError(err)) { offlineRefresh(); return; }
       toast(friendlyError(err));
@@ -648,6 +667,7 @@
     renderSummary();
     renderList();
     renderCategories();
+    renderCategoryRules();
     renderRecurring();
     renderBudgetSettings();
     renderBills();
@@ -1047,6 +1067,105 @@
     }
   }
 
+  /* ---------- Regras de categoria ---------- */
+
+  function renderCategoryRules() {
+    const ul = $('rules-list');
+    ul.replaceChildren();
+    $('rules-empty').hidden = state.rules.length > 0;
+    for (const r of state.rules) {
+      const li = el('li');
+      const cat = state.categories.find((c) => c.id === r.category_id);
+      const text = el('span', 'bill-text');
+      text.append(el('span', 'title', `“${r.pattern}”`), el('span', 'sub', `→ ${cat ? cat.name : 'categoria apagada'}`));
+      const remove = el('button', 'remove', '×');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', `Excluir regra ${r.pattern}`);
+      remove.addEventListener('click', () => removeRule(r));
+      li.append(text, remove);
+      ul.append(li);
+    }
+
+    const select = $('rule-category');
+    const keep = select.value;
+    select.replaceChildren();
+    for (const [label, type] of [['Despesas', 'expense'], ['Receitas', 'income']]) {
+      const list = state.categories.filter((c) => c.type === type);
+      if (list.length === 0) continue;
+      const group = document.createElement('optgroup');
+      group.label = label;
+      for (const c of list) group.append(new Option(c.name, c.id));
+      select.append(group);
+    }
+    if (keep) select.value = keep;
+    $('rule-add').disabled = state.categories.length === 0;
+    $('rule-apply').disabled = state.rules.length === 0;
+  }
+
+  function showRulesError(msg) {
+    $('rules-error').textContent = msg;
+    $('rules-error').hidden = !msg;
+  }
+
+  $('rule-add').addEventListener('click', async () => {
+    showRulesError('');
+    const parsed = Classifier.normalizePattern($('rule-pattern').value);
+    if (!parsed.ok) { showRulesError(parsed.error); return; }
+    if (!$('rule-category').value) { showRulesError('Escolha a categoria.'); return; }
+    if (state.rules.some((r) => r.pattern === parsed.pattern)) { showRulesError('Já existe uma regra para esse texto.'); return; }
+    if (!navigator.onLine) { showRulesError('Sem conexão: criar regras precisa de internet.'); return; }
+    const { error } = await sb.from('category_rules').insert({ pattern: parsed.pattern, category_id: $('rule-category').value });
+    if (error) { showRulesError(friendlyError(error)); return; }
+    $('rule-pattern').value = '';
+    toast('Regra criada');
+    await refresh();
+  });
+
+  async function removeRule(r) {
+    const { error } = await sb.from('category_rules').delete().eq('id', r.id);
+    if (error) { showRulesError(friendlyError(error)); return; }
+    toast('Regra excluída');
+    await refresh();
+  }
+
+  // Aplica as regras (só elas, não o histórico) aos lançamentos que estão sem categoria.
+  $('rule-apply').addEventListener('click', async () => {
+    showRulesError('');
+    if (!navigator.onLine) { showRulesError('Sem conexão: precisa de internet.'); return; }
+    $('rule-apply').disabled = true;
+    try {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('id, type, description')
+        .is('category_id', null)
+        .not('description', 'is', null)
+        .limit(1000);
+      if (error) throw error;
+      const byCategory = new Map();
+      for (const t of data) {
+        const guess = Classifier.classify(state.rules, state.categories, t.type, t.description, null);
+        if (!guess) continue;
+        if (!byCategory.has(guess.id)) byCategory.set(guess.id, []);
+        byCategory.get(guess.id).push(t.id);
+      }
+      let changed = 0;
+      for (const [categoryId, ids] of byCategory) {
+        for (let i = 0; i < ids.length; i += 80) {
+          const part = ids.slice(i, i + 80);
+          const res = await sb.from('transactions').update({ category_id: categoryId }).in('id', part);
+          if (res.error) throw res.error;
+          changed += part.length;
+        }
+      }
+      toast(changed === 0 ? 'Nenhum lançamento sem categoria combina com as regras' : changed === 1 ? '1 lançamento classificado' : `${changed} lançamentos classificados`);
+      if (changed > 0) await refresh();
+    } catch (err) {
+      showRulesError(friendlyError(err));
+    } finally {
+      $('rule-apply').disabled = state.rules.length === 0;
+    }
+  });
+
   /* ---------- Navegação ---------- */
 
   function switchTab(name) {
@@ -1155,8 +1274,9 @@
   $('tx-desc').addEventListener('input', () => {
     if (state.editing || state.categoryTouched || !state.hints) return;
     const type = currentType();
-    const id = Quick.suggestCategory(state.hints, type, $('tx-desc').value);
-    const valid = id && state.categories.some((c) => c.id === id && c.type === type);
+    const guess = Classifier.classify(state.rules, state.categories, type, $('tx-desc').value, Quick.suggestCategory(state.hints, type, $('tx-desc').value));
+    const id = guess ? guess.id : null;
+    const valid = Boolean(id);
     $('tx-category').value = valid ? id : '';
     showHint(valid ? `Categoria sugerida: ${categoryName(id)}` : '');
   });
@@ -2086,6 +2206,7 @@
     suggestions: null,
     selected: new Set(),
     category: new Map(),
+    source: new Map(),
     invert: false,
     token: 0,
   };
@@ -2205,13 +2326,15 @@
   function resetSelection() {
     imp.selected = new Set();
     imp.category = new Map();
+    imp.source = new Map();
     imp.items.forEach((item, i) => {
       const dup = imp.existing.has(item.externalId);
       if (!dup && !isSimilar(item)) imp.selected.add(i);
       const v = Importer.view(item, imp.invert);
-      const hint = imp.suggestions && imp.suggestions.get(`${v.type}|${Importer.descriptionKey(item.description)}`);
-      const valid = hint && state.categories.some((c) => c.id === hint && c.type === v.type);
-      imp.category.set(i, valid ? hint : '');
+      const past = imp.suggestions && imp.suggestions.get(`${v.type}|${Importer.descriptionKey(item.description)}`);
+      const guess = Classifier.classify(state.rules, state.categories, v.type, item.description, past);
+      imp.category.set(i, guess ? guess.id : '');
+      if (guess) imp.source.set(i, guess.source); else imp.source.delete(i);
     });
   }
 
@@ -2258,10 +2381,13 @@
 
       const text = el('span', 'import-text');
       const note = dup ? 'Já importado' : similar ? 'Parecido com um lançamento seu' : '';
-      text.append(
-        el('span', 'title', item.description || 'Sem descrição'),
-        el('span', 'sub', [fmtDate(item.date), note].filter(Boolean).join(' · '))
-      );
+      const subText = () => {
+        const src = imp.source.get(i);
+        const how = !dup && src && imp.category.get(i) ? (src === 'rule' ? 'categoria por regra' : 'categoria pelo histórico') : '';
+        return [fmtDate(item.date), note, how].filter(Boolean).join(' · ');
+      };
+      const sub = el('span', 'sub', subText());
+      text.append(el('span', 'title', item.description || 'Sem descrição'), sub);
       const sign = v.type === 'income' ? '+ ' : '− ';
       label.append(box, text, el('span', 'amount', sign + brl.format(v.amount)));
       li.append(label);
@@ -2278,7 +2404,7 @@
           select.append(o);
         }
         select.value = imp.category.get(i) || '';
-        select.addEventListener('change', () => imp.category.set(i, select.value));
+        select.addEventListener('change', () => { imp.category.set(i, select.value); imp.source.delete(i); sub.textContent = subText(); });
         li.append(select);
       }
       list.append(li);
@@ -2518,6 +2644,7 @@
       state.budgets = [];
       state.bills = [];
       state.goals = [];
+      state.rules = [];
       state.hints = null;
       state.trendRows = [];
       state.trendCategory = '';

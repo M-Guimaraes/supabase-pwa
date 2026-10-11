@@ -6,7 +6,7 @@
       { id: 'cat-mercado', name: 'Mercado', type: 'expense', created_at: '2026-01-01' },
       { id: 'cat-sal', name: 'Salário', type: 'income', created_at: '2026-01-01' },
     ],
-    transactions: [], recurring_transactions: [], budgets: [], bills: [], goals: [],
+    transactions: [], recurring_transactions: [], budgets: [], bills: [], goals: [], category_rules: [],
   };
   if (window.__seed) Object.assign(db, window.__seed);
   window.__db = db;

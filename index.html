@@ -229,6 +229,22 @@
         </details>
 
         <details class="group">
+          <summary><span class="group-title">Regras de categoria</span><span class="group-hint">Classificação automática</span></summary>
+          <div class="group-body">
+            <p class="account-note">Se a descrição do lançamento contiver o texto da regra, a categoria é escolhida sozinha na importação e ao digitar. A regra mais específica vence; sem regra, vale a categoria que você já usou antes.</p>
+            <ul id="rules-list" class="rec-list"></ul>
+            <p id="rules-empty" class="empty" hidden>Nenhuma regra ainda.</p>
+            <label for="rule-pattern">Se a descrição contiver</label>
+            <input id="rule-pattern" type="text" maxlength="60" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="uber, ifood, padaria…">
+            <label for="rule-category">A categoria é</label>
+            <select id="rule-category"></select>
+            <p id="rules-error" class="form-error" role="alert" hidden></p>
+            <button id="rule-add" class="btn" type="button">Adicionar regra</button>
+            <button id="rule-apply" class="btn" type="button">Aplicar aos lançamentos sem categoria</button>
+          </div>
+        </details>
+
+        <details class="group">
           <summary><span class="group-title">Lançamentos fixos</span><span class="group-hint">Aluguel, assinaturas, salário</span></summary>
           <div class="group-body">
             <p class="account-note">Entram sozinhos todo mês.</p>
@@ -613,6 +629,7 @@
   <script src="exporter.js"></script>
   <script src="quick.js"></script>
   <script src="password.js"></script>
+  <script src="classifier.js"></script>
   <script src="trend.js"></script>
   <script src="offline.js"></script>
   <script src="app.js"></script>
