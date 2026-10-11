@@ -1,10 +1,11 @@
-const CACHE = 'caixa-v3';
+const CACHE = 'caixa-v4';
 const SHELL = [
   './',
   'index.html',
   'styles.css',
   'importer.js',
   'recurring.js',
+  'budget.js',
   'app.js',
   'manifest.webmanifest',
   'icons/icon-192.png',

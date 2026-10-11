@@ -9,6 +9,8 @@
   --neg: #b42343;
   --neg-bg: #f6dce2;
   --focus: #3a5bd9;
+  --warn: #8a5d00;
+  --warn-bar: #c98a00;
   --radius: 14px;
   --tabbar-h: 60px;
   color-scheme: light dark;
@@ -26,6 +28,8 @@
     --neg: #ff7a93;
     --neg-bg: #4a1f2c;
     --focus: #8aa2ff;
+    --warn: #ffc857;
+    --warn-bar: #ffc857;
   }
 }
 
@@ -308,6 +312,20 @@ main { padding: 0 1rem; }
 .fixed-total { margin-top: 0.9rem; color: var(--ink-soft); font-size: 0.92rem; }
 #recurring-add { margin-top: 0.4rem; }
 
+/* ---------- Orçamento e contas ---------- */
+
+.budget .bar span { background: var(--pos); }
+.budget li.warn .bar span { background: var(--warn-bar); }
+.budget li.over .bar span { background: var(--neg); }
+.budget li.over .val, .budget li.warn .val { font-weight: 700; }
+.budget li.over .val { color: var(--neg); }
+.budget li.warn .val { color: var(--warn); }
+.budget .hint { font-size: 0.85rem; color: var(--ink-soft); }
+.cat-list .bill-text { flex: 1; min-width: 0; padding-right: 0.5rem; }
+.cat-list .bill-text .title { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.cat-list .bill-text .sub { display: block; font-size: 0.85rem; color: var(--ink-soft); }
+.cat-list li.bill-late .bill-text .sub { color: var(--neg); font-weight: 600; }
+
 /* ---------- Importar extrato ---------- */
 
 .import-summary { margin: 1rem 0 0.15rem; font-weight: 600; }
@@ -448,7 +466,7 @@ main { padding: 0 1rem; }
 #rtype-income:checked + label { color: var(--pos); }
 .segmented input:focus-visible + label { outline: 3px solid var(--focus); outline-offset: 1px; }
 
-#tx-amount, #rec-amount {
+#tx-amount, #rec-amount, #bud-amount, #bill-amount {
   width: 100%;
   min-height: 56px;
   padding: 0.6rem 0.85rem;

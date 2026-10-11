@@ -18,6 +18,10 @@
     categories: [],
     transactions: [],
     recurring: [],
+    budgets: [],
+    bills: [],
+    editingBudget: null,
+    editingBill: null,
     suggestions: [],
     lastGeneration: null,
     editing: null,
@@ -168,6 +172,23 @@
     state.transactions = data.map((t) => ({ ...t, amount: Number(t.amount) }));
   }
 
+  async function loadBudgets() {
+    const { data, error } = await sb.from('budgets').select('id, category_id, monthly_limit');
+    if (error) throw error;
+    state.budgets = data.map((b) => ({ ...b, monthly_limit: Number(b.monthly_limit) }));
+  }
+
+  // Só as contas ainda não pagas; as pagas viram lançamentos de despesa.
+  async function loadBills() {
+    const { data, error } = await sb
+      .from('bills')
+      .select('id, description, amount, category_id, due_on, paid_on')
+      .is('paid_on', null)
+      .order('due_on');
+    if (error) throw error;
+    state.bills = data.map((b) => ({ ...b, amount: Number(b.amount) }));
+  }
+
   async function loadRecurring() {
     const { data, error } = await sb
       .from('recurring_transactions')
@@ -233,7 +254,7 @@
 
   async function refresh() {
     try {
-      await Promise.all([loadCategories(), loadRecurring()]);
+      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills()]);
     } catch (err) {
       toast(friendlyError(err));
       return;
@@ -281,6 +302,8 @@
     renderList();
     renderCategories();
     renderRecurring();
+    renderBudgetSettings();
+    renderBills();
   }
 
   function renderSummary() {
@@ -316,6 +339,8 @@
         (fixed.count === 1 ? 'lançamento.' : 'lançamentos.');
     }
 
+    renderBudgetProgress(perCategory);
+
     const list = $('breakdown');
     list.replaceChildren();
     const rows = [...perCategory.entries()].sort((a, b) => b[1] - a[1]);
@@ -331,6 +356,32 @@
       bar.append(fill);
       li.append(row, bar);
       list.append(li);
+    }
+  }
+
+  function renderBudgetProgress(spentByCategory) {
+    const rows = Budget.budgetRows(state.budgets, spentByCategory);
+    $('budget-progress').hidden = rows.length === 0;
+    const ul = $('budget-list');
+    ul.replaceChildren();
+    for (const r of rows) {
+      const li = el('li', r.level);
+      const row = el('div', 'row');
+      row.append(
+        el('span', 'name', categoryName(r.category_id)),
+        el('span', 'val', `${brl.format(r.spent)} de ${brl.format(r.monthly_limit)}`)
+      );
+      const bar = el('div', 'bar');
+      const fill = el('span');
+      fill.style.width = `${Math.min(r.percent, 100)}%`;
+      bar.append(fill);
+      li.append(row, bar);
+      if (r.level === 'over') {
+        li.append(el('span', 'hint', `Passou ${brl.format(-r.remaining)} do limite.`));
+      } else if (r.level === 'warn') {
+        li.append(el('span', 'hint', `${r.percent}% do limite. Restam ${brl.format(r.remaining)}.`));
+      }
+      ul.append(li);
     }
   }
 
@@ -713,6 +764,245 @@
     recSheet.close();
     toast('Lançamento fixo excluído');
     await refresh();
+  });
+
+  /* ---------- Orçamento ---------- */
+
+  const budgetSheet = $('budget-sheet');
+
+  function renderBudgetSettings() {
+    const ul = $('budget-edit-list');
+    ul.replaceChildren();
+    $('budget-empty').hidden = state.budgets.length > 0;
+    const sorted = state.budgets.slice().sort((a, b) => categoryName(a.category_id).localeCompare(categoryName(b.category_id), 'pt-BR'));
+    for (const b of sorted) {
+      const li = el('li');
+      const btn = el('button', 'tx expense');
+      btn.type = 'button';
+      const info = el('span', 'info');
+      info.append(el('span', 'title', categoryName(b.category_id)), el('span', 'sub', 'Limite por mês'));
+      btn.append(el('span', 'dot'), info, el('span', 'amount', brl.format(b.monthly_limit)));
+      btn.addEventListener('click', () => openBudgetSheet(b));
+      li.append(btn);
+      ul.append(li);
+    }
+  }
+
+  function openBudgetSheet(budget) {
+    const taken = new Set(state.budgets.map((b) => b.category_id));
+    const options = state.categories.filter(
+      (c) => c.type === 'expense' && (budget ? c.id === budget.category_id : !taken.has(c.id))
+    );
+    if (!budget && options.length === 0) {
+      toast('Todas as categorias de despesa já têm limite.');
+      return;
+    }
+    state.editingBudget = budget || null;
+    $('bud-error').hidden = true;
+    $('budget-title').textContent = budget ? 'Editar limite' : 'Novo limite mensal';
+    $('bud-delete').hidden = !budget;
+    const select = $('bud-category');
+    select.replaceChildren();
+    for (const c of options) {
+      const o = el('option', '', c.name);
+      o.value = c.id;
+      select.append(o);
+    }
+    select.disabled = !!budget;
+    $('bud-amount').value = budget ? budget.monthly_limit.toFixed(2).replace('.', ',') : '';
+    budgetSheet.showModal();
+    $('bud-amount').focus();
+  }
+
+  $('budget-add').addEventListener('click', () => openBudgetSheet(null));
+  $('bud-cancel').addEventListener('click', () => budgetSheet.close());
+
+  $('budget-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('bud-error');
+    errorBox.hidden = true;
+    const limit = parseAmount($('bud-amount').value);
+    const categoryId = $('bud-category').value;
+    if (!categoryId) { errorBox.textContent = 'Escolha uma categoria.'; errorBox.hidden = false; return; }
+    if (!(limit > 0)) { errorBox.textContent = 'Informe um limite maior que zero.'; errorBox.hidden = false; return; }
+
+    const editing = state.editingBudget;
+    const save = $('bud-save');
+    save.disabled = true;
+    const query = editing
+      ? sb.from('budgets').update({ monthly_limit: limit }).eq('id', editing.id)
+      : sb.from('budgets').upsert(
+          { user_id: state.userId, category_id: categoryId, monthly_limit: limit },
+          { onConflict: 'user_id,category_id' }
+        );
+    const { error } = await query;
+    save.disabled = false;
+    if (error) { errorBox.textContent = friendlyError(error); errorBox.hidden = false; return; }
+
+    budgetSheet.close();
+    toast('Limite salvo');
+    await refresh();
+  });
+
+  $('bud-delete').addEventListener('click', async () => {
+    const b = state.editingBudget;
+    if (!b || !confirm(`Remover o limite de "${categoryName(b.category_id)}"?`)) return;
+    const { error } = await sb.from('budgets').delete().eq('id', b.id);
+    if (error) { $('bud-error').textContent = friendlyError(error); $('bud-error').hidden = false; return; }
+    budgetSheet.close();
+    toast('Limite removido');
+    await refresh();
+  });
+
+  /* ---------- Contas a pagar ---------- */
+
+  const billSheet = $('bill-sheet');
+
+  // Dá baixa: cria a despesa de hoje (uma só, pelo external_id) e marca a conta como paga.
+  async function payBill(bill) {
+    const today = ymd(new Date());
+    const { error: txError } = await sb.from('transactions').upsert(
+      {
+        user_id: state.userId,
+        type: 'expense',
+        amount: bill.amount,
+        description: bill.description,
+        category_id: bill.category_id,
+        occurred_on: today,
+        external_id: `bill:${bill.id}`,
+      },
+      { onConflict: 'user_id,external_id', ignoreDuplicates: true }
+    );
+    if (txError) { toast(friendlyError(txError)); return false; }
+    const { error } = await sb.from('bills').update({ paid_on: today }).eq('id', bill.id);
+    if (error) { toast(friendlyError(error)); return false; }
+    state.month = firstOfMonth(new Date());
+    toast('Conta paga e lançada nas despesas');
+    await refresh();
+    return true;
+  }
+
+  function renderBills() {
+    const today = ymd(new Date());
+
+    const due = Budget.dueBills(state.bills, today);
+    $('bills-due').hidden = due.length === 0;
+    const dueUl = $('bills-due-list');
+    dueUl.replaceChildren();
+    for (const b of due) {
+      const li = el('li', b.daysLeft < 0 ? 'bill-late' : '');
+      const text = el('span', 'bill-text');
+      text.append(
+        el('span', 'title', b.description),
+        el('span', 'sub', `${brl.format(b.amount)} · ${Budget.dueLabel(b.daysLeft)}`)
+      );
+      const pay = el('button', 'btn small', 'Paguei');
+      pay.type = 'button';
+      pay.addEventListener('click', async () => {
+        pay.disabled = true;
+        if (!(await payBill(b))) pay.disabled = false;
+      });
+      li.append(text, pay);
+      dueUl.append(li);
+    }
+
+    const ul = $('bills-list');
+    ul.replaceChildren();
+    $('bills-empty').hidden = state.bills.length > 0;
+    for (const b of state.bills) {
+      const li = el('li');
+      const btn = el('button', 'tx expense');
+      btn.type = 'button';
+      const info = el('span', 'info');
+      info.append(
+        el('span', 'title', b.description),
+        el('span', 'sub', `${fmtDate(b.due_on)} · ${Budget.dueLabel(Budget.daysUntil(b.due_on, today))}`)
+      );
+      btn.append(el('span', 'dot'), info, el('span', 'amount', brl.format(b.amount)));
+      btn.addEventListener('click', () => openBillSheet(b));
+      li.append(btn);
+      ul.append(li);
+    }
+  }
+
+  function openBillSheet(bill) {
+    state.editingBill = bill || null;
+    $('bill-error').hidden = true;
+    $('bill-title').textContent = bill ? 'Editar conta' : 'Nova conta';
+    $('bill-delete').hidden = !bill;
+    $('bill-pay').hidden = !bill;
+    $('bill-amount').value = bill ? bill.amount.toFixed(2).replace('.', ',') : '';
+    $('bill-desc').value = bill ? bill.description : '';
+    const select = $('bill-category');
+    select.replaceChildren();
+    const none = el('option', '', 'Sem categoria');
+    none.value = '';
+    select.append(none);
+    for (const c of state.categories.filter((x) => x.type === 'expense')) {
+      const o = el('option', '', c.name);
+      o.value = c.id;
+      select.append(o);
+    }
+    select.value = bill && bill.category_id ? bill.category_id : '';
+    $('bill-due').value = bill ? bill.due_on : ymd(new Date());
+    billSheet.showModal();
+    if (!bill) $('bill-amount').focus();
+  }
+
+  $('bill-add').addEventListener('click', () => openBillSheet(null));
+  $('bill-cancel').addEventListener('click', () => billSheet.close());
+
+  $('bill-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('bill-error');
+    errorBox.hidden = true;
+    const fail = (m) => { errorBox.textContent = m; errorBox.hidden = false; };
+
+    const amount = parseAmount($('bill-amount').value);
+    const description = $('bill-desc').value.trim();
+    const due = $('bill-due').value;
+    if (!(amount > 0)) return fail('Informe um valor maior que zero.');
+    if (!description) return fail('Digite uma descrição, por exemplo "Conta de luz".');
+    if (!due) return fail('Escolha a data de vencimento.');
+
+    const payload = { amount, description, category_id: $('bill-category').value || null, due_on: due };
+    const editing = state.editingBill;
+    const save = $('bill-save');
+    save.disabled = true;
+    const query = editing
+      ? sb.from('bills').update(payload).eq('id', editing.id)
+      : sb.from('bills').insert(payload);
+    const { error } = await query;
+    save.disabled = false;
+    if (error) return fail(friendlyError(error));
+
+    billSheet.close();
+    toast('Conta salva');
+    await refresh();
+  });
+
+  $('bill-delete').addEventListener('click', async () => {
+    const b = state.editingBill;
+    if (!b || !confirm(`Excluir a conta "${b.description}"?`)) return;
+    const { error } = await sb.from('bills').delete().eq('id', b.id);
+    if (error) { $('bill-error').textContent = friendlyError(error); $('bill-error').hidden = false; return; }
+    billSheet.close();
+    toast('Conta excluída');
+    await refresh();
+  });
+
+  $('bill-pay').addEventListener('click', async () => {
+    const b = state.editingBill;
+    if (!b) return;
+    $('bill-pay').disabled = true;
+    const ok = await payBill({
+      ...b,
+      amount: parseAmount($('bill-amount').value) || b.amount,
+      description: $('bill-desc').value.trim() || b.description,
+      category_id: $('bill-category').value || null,
+    });
+    $('bill-pay').disabled = false;
+    if (ok) billSheet.close();
   });
 
   /* ---------- Importar extrato ---------- */
@@ -1149,6 +1439,8 @@
       state.categories = [];
       state.transactions = [];
       state.recurring = [];
+      state.budgets = [];
+      state.bills = [];
       state.suggestions = [];
       showAuth();
     }

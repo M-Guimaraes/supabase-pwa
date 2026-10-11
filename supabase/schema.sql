@@ -131,3 +131,47 @@ create policy "recurring_update_own" on public.recurring_transactions
   for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 create policy "recurring_delete_own" on public.recurring_transactions
   for delete to authenticated using (user_id = (select auth.uid()));
+
+-- Orçamento: limite mensal por categoria de despesa (um por categoria).
+create table public.budgets (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  category_id uuid not null references public.categories (id) on delete cascade,
+  monthly_limit numeric(12, 2) not null check (monthly_limit > 0),
+  created_at timestamptz not null default now(),
+  unique (user_id, category_id)
+);
+create index budgets_category_id_idx on public.budgets (category_id);
+alter table public.budgets enable row level security;
+create policy "budgets_select_own" on public.budgets
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "budgets_insert_own" on public.budgets
+  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "budgets_update_own" on public.budgets
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "budgets_delete_own" on public.budgets
+  for delete to authenticated using (user_id = (select auth.uid()));
+
+-- Contas a pagar. Ao pagar, o app cria a despesa em transactions com external_id
+-- "bill:<id>" (sem duplicar) e preenche paid_on.
+create table public.bills (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  category_id uuid references public.categories (id) on delete set null,
+  description text not null,
+  amount numeric(12, 2) not null check (amount > 0),
+  due_on date not null,
+  paid_on date,
+  created_at timestamptz not null default now()
+);
+create index bills_user_id_idx on public.bills (user_id);
+create index bills_category_id_idx on public.bills (category_id);
+alter table public.bills enable row level security;
+create policy "bills_select_own" on public.bills
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "bills_insert_own" on public.bills
+  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "bills_update_own" on public.bills
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "bills_delete_own" on public.bills
+  for delete to authenticated using (user_id = (select auth.uid()));

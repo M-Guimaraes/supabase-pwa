@@ -6,9 +6,9 @@ Estados possíveis: pendente, em andamento, concluído.
 
 | # | Tópico | Prioridade | Status |
 |---|---|---|---|
-| 1A | Importar extrato (CSV e OFX) | 1 | implementado, falta testar no celular |
+| 1A | Importar extrato (CSV e OFX) | 1 | concluído |
 | 4 | Gastos recorrentes e assinaturas | 2 | implementado, falta testar no celular |
-| 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | pendente |
+| 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | implementado, falta testar no celular |
 | 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | pendente |
 | 2 | Menos digitação manual | 5 | pendente |
 | 5 | Segurança e controle dos dados | 6 | pendente |
@@ -35,7 +35,11 @@ Pronto quando: lançamentos fixos aparecem sozinhos todo mês, sem duplicar.
 
 ## 3. Orçamento por categoria, alertas e lembretes de contas
 
-Status: pendente
+Status: implementado em 11/10/2026, falta testar no celular.
+
+Feito: tabelas `budgets` (um limite por categoria) e `bills` (conta com vencimento e data de pagamento), ambas com RLS; telas em Ajustes; barra por categoria no Resumo (amarela a partir de 80%, vermelha acima de 100%, com o valor que resta ou que passou); lista "Contas a vencer" no Resumo com atrasadas e as dos próximos 7 dias; "Paguei" cria a despesa de hoje sem duplicar (`bill:<id>`). Avisos só dentro do app; push fica para depois. Testes em `tests/budget.test.js`.
+
+Plano original:
 
 1. Criar a tabela `budgets` (usuário, categoria, limite mensal) com RLS, via migration.
 2. Tela para definir o limite de cada categoria.
@@ -96,7 +100,7 @@ Pronto quando: uma pessoa nova registra o primeiro lançamento sem ajuda.
 
 ## 1A. Importar extrato (CSV e OFX)
 
-Status: implementado em 11/10/2026, falta testar no celular com extratos reais. Decidido em 11/10/2026 como primeira entrega, no lugar da sincronização automática, porque não tem custo e serve a todos os usuários.
+Status: concluído, testado no celular pelo usuário em 11/10/2026. Decidido em 11/10/2026 como primeira entrega, no lugar da sincronização automática, porque não tem custo e serve a todos os usuários.
 
 1. **Entrada:** em Ajustes, botão "Importar extrato" que abre o seletor de arquivo. O arquivo é lido no próprio navegador e não é enviado a nenhum servidor; só os lançamentos que o usuário confirmar vão para o banco.
 2. **Leitor de OFX:** aceitar OFX 1.x (formato SGML) e 2.x (XML). Ler data, valor, descrição e o identificador único de cada lançamento (`FITID`). O tipo (receita ou despesa) vem do sinal do valor.
@@ -111,7 +115,7 @@ Para ajustar o leitor a dados reais, pedir um arquivo de exemplo do banco do usu
 
 Feito: leitores de OFX 1.x/2.x e CSV (testes automáticos em `tests/`, 11 casos), coluna `external_id` com índice único, prévia com duplicados, categoria sugerida, inverter sinais para faturas de cartão e importação em lotes de 100. Formato do C6 Bank testado com um extrato real, só no leitor.
 
-Falta: testar a tela no celular com extratos reais de outros bancos e de cartão.
+Falta: nada pendente; outros bancos e faturas de cartão podem exigir ajuste no leitor.
 
 Pronto quando: importar um extrato real sem duplicar lançamentos, mesmo importando o mesmo arquivo duas vezes.
 

@@ -65,6 +65,16 @@
           <p id="fixed-total" class="fixed-total" hidden></p>
         </div>
 
+        <div id="bills-due" hidden>
+          <h3 class="section-title">Contas a vencer</h3>
+          <ul id="bills-due-list" class="cat-list"></ul>
+        </div>
+
+        <div id="budget-progress" hidden>
+          <h3 class="section-title">Orçamento do mês</h3>
+          <ul id="budget-list" class="breakdown budget"></ul>
+        </div>
+
         <h3 class="section-title">Para onde foi o dinheiro</h3>
         <ul id="breakdown" class="breakdown"></ul>
         <p id="breakdown-empty" class="empty" hidden>Nenhuma despesa neste mês. Toque em + para registrar a primeira.</p>
@@ -90,6 +100,18 @@
         <ul id="cats-expense" class="cat-list"></ul>
         <h3 class="section-title">Receitas</h3>
         <ul id="cats-income" class="cat-list"></ul>
+
+        <h3 class="section-title">Orçamento mensal</h3>
+        <p class="account-note">Defina quanto pretende gastar por categoria. O Resumo avisa a partir de 80%.</p>
+        <ul id="budget-edit-list" class="rec-list"></ul>
+        <p id="budget-empty" class="empty" hidden>Nenhum limite definido ainda.</p>
+        <button id="budget-add" class="btn" type="button">Definir limite</button>
+
+        <h3 class="section-title">Contas a pagar</h3>
+        <p class="account-note">Cadastre contas com vencimento. As que vencem em até 7 dias aparecem no Resumo.</p>
+        <ul id="bills-list" class="rec-list"></ul>
+        <p id="bills-empty" class="empty" hidden>Nenhuma conta pendente.</p>
+        <button id="bill-add" class="btn" type="button">Nova conta</button>
 
         <h3 class="section-title">Lançamentos fixos</h3>
         <p class="account-note">Aluguel, assinaturas e salário entram sozinhos todo mês.</p>
@@ -194,6 +216,53 @@
     </form>
   </dialog>
 
+  <dialog id="budget-sheet" class="sheet" aria-labelledby="budget-title">
+    <form id="budget-form" method="dialog" novalidate>
+      <h3 id="budget-title">Limite mensal</h3>
+
+      <label for="bud-category">Categoria</label>
+      <select id="bud-category"></select>
+
+      <label for="bud-amount">Limite por mês</label>
+      <input id="bud-amount" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+
+      <p id="bud-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="bud-delete" class="btn danger" type="button" hidden>Remover</button>
+        <button id="bud-cancel" class="btn" type="button">Cancelar</button>
+        <button id="bud-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="bill-sheet" class="sheet" aria-labelledby="bill-title">
+    <form id="bill-form" method="dialog" novalidate>
+      <h3 id="bill-title">Nova conta</h3>
+
+      <label for="bill-amount">Valor</label>
+      <input id="bill-amount" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+
+      <label for="bill-desc">Descrição</label>
+      <input id="bill-desc" type="text" maxlength="80" placeholder="Ex.: Conta de luz" autocomplete="off" required>
+
+      <label for="bill-category">Categoria</label>
+      <select id="bill-category"></select>
+
+      <label for="bill-due">Vencimento</label>
+      <input id="bill-due" type="date" required>
+
+      <p id="bill-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="bill-delete" class="btn danger" type="button" hidden>Excluir</button>
+        <button id="bill-pay" class="btn" type="button" hidden>Paga</button>
+        <button id="bill-cancel" class="btn" type="button">Cancelar</button>
+        <button id="bill-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="import-sheet" class="sheet" aria-labelledby="import-title">
     <form id="import-form" method="dialog" novalidate>
       <h3 id="import-title">Importar extrato</h3>
@@ -268,6 +337,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="importer.js"></script>
   <script src="recurring.js"></script>
+  <script src="budget.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
