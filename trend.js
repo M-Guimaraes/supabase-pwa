@@ -74,5 +74,14 @@
     return { start: `${year}-01-01`, next: `${year + 1}-01-01` };
   }
 
-  return { monthlySeries, windowStart, niceScale, compact, hasData, totals, yearRange };
+  const NO_CATEGORY = '__none';
+
+  // Só os lançamentos de uma categoria. Vazio = todas; NO_CATEGORY = os sem categoria.
+  function filterByCategory(transactions, categoryId) {
+    if (!categoryId) return transactions;
+    if (categoryId === NO_CATEGORY) return transactions.filter((t) => !t.category_id);
+    return transactions.filter((t) => t.category_id === categoryId);
+  }
+
+  return { monthlySeries, windowStart, niceScale, compact, hasData, totals, yearRange, filterByCategory, NO_CATEGORY };
 });

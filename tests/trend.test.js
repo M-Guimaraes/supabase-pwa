@@ -76,3 +76,13 @@ test('série de 12 meses ancorada em dezembro cobre janeiro a dezembro do ano', 
 test('yearRange devolve o intervalo do ano', () => {
   assert.deepStrictEqual(T.yearRange(2026), { start: '2026-01-01', next: '2027-01-01' });
 });
+
+test('filterByCategory: todas, uma categoria e sem categoria', () => {
+  const rows = [
+    { id: 1, category_id: 'a' }, { id: 2, category_id: 'b' }, { id: 3, category_id: null }, { id: 4 },
+  ];
+  assert.strictEqual(T.filterByCategory(rows, ''), rows);
+  assert.deepStrictEqual(T.filterByCategory(rows, 'a').map((r) => r.id), [1]);
+  assert.deepStrictEqual(T.filterByCategory(rows, T.NO_CATEGORY).map((r) => r.id), [3, 4]);
+  assert.deepStrictEqual(T.filterByCategory(rows, 'zzz'), []);
+});

@@ -28,6 +28,7 @@
     viewingCache: false,
     trendSel: null,
     trendRange: '6m',
+    trendCategory: '',
     trendYear: new Date().getFullYear(),
     yearRows: {},
     yearPartial: false,
@@ -773,7 +774,7 @@
     for (let from = 0; from < 20000; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('type, amount, occurred_on')
+        .select('type, amount, occurred_on, category_id')
         .gte('occurred_on', start)
         .lt('occurred_on', next)
         .order('occurred_on')
@@ -802,14 +803,16 @@
   function renderTrend() {
     const year = state.trendRange === 'year';
     const now = new Date();
+    fillTrendCategories();
+    const pick = (rows) => Trend.filterByCategory(rows.concat(pendingList()), state.trendCategory);
     let series;
     if (year) {
-      const rows = state.yearRows[state.trendYear] || state.trendRows;
-      series = Trend.monthlySeries(rows.concat(pendingList()), new Date(state.trendYear, 11, 1), 12);
+      series = Trend.monthlySeries(pick(state.yearRows[state.trendYear] || state.trendRows), new Date(state.trendYear, 11, 1), 12);
     } else {
-      series = Trend.monthlySeries(state.trendRows.concat(pendingList()), now);
+      series = Trend.monthlySeries(pick(state.trendRows), now);
     }
-    $('trend-title').textContent = year ? `Ano de ${state.trendYear}` : 'Últimos 6 meses';
+    const catLabel = state.trendCategory === Trend.NO_CATEGORY ? 'Sem categoria' : state.trendCategory ? categoryName(state.trendCategory) : '';
+    $('trend-title').textContent = (year ? `Ano de ${state.trendYear}` : 'Últimos 6 meses') + (catLabel ? ` · ${catLabel}` : '');
     $('trend-year-nav').hidden = !year;
     $('year-label').textContent = state.trendYear;
     $('year-next').disabled = state.trendYear >= now.getFullYear();
@@ -821,7 +824,7 @@
     if ($('trend').hidden) return;
     state.trendSeries = series;
     if (!Trend.hasData(series)) {
-      $('trend-chart').replaceChildren(el('p', 'empty', `Nenhum lançamento em ${state.trendYear}.`));
+      $('trend-chart').replaceChildren(el('p', 'empty', catLabel ? 'Nenhum lançamento desta categoria no período.' : `Nenhum lançamento em ${state.trendYear}.`));
       $('trend-readout').replaceChildren();
       fillTrendTable(series);
       return;
@@ -833,6 +836,30 @@
     else sel = sel !== null && sel < series.length ? sel : series.length - 1;
     selectTrendMonth(sel);
   }
+
+  // Opções do filtro: despesas e receitas em grupos; mantém a escolha se a categoria ainda existe.
+  function fillTrendCategories() {
+    const select = $('trend-category');
+    const valid = new Set(['', Trend.NO_CATEGORY, ...state.categories.map((c) => c.id)]);
+    if (!valid.has(state.trendCategory)) state.trendCategory = '';
+    select.replaceChildren(new Option('Todas as categorias', ''));
+    for (const [label, type] of [['Despesas', 'expense'], ['Receitas', 'income']]) {
+      const list = state.categories.filter((c) => c.type === type);
+      if (list.length === 0) continue;
+      const group = document.createElement('optgroup');
+      group.label = label;
+      for (const c of list) group.append(new Option(c.name, c.id));
+      select.append(group);
+    }
+    select.append(new Option('Sem categoria', Trend.NO_CATEGORY));
+    select.value = state.trendCategory;
+  }
+
+  $('trend-category').addEventListener('change', (e) => {
+    state.trendCategory = e.target.value;
+    state.trendSel = state.trendRange === 'year' ? null : 5;
+    renderTrend();
+  });
 
   async function setTrendRange(range) {
     state.trendRange = range;
@@ -2493,6 +2520,8 @@
       state.goals = [];
       state.hints = null;
       state.trendRows = [];
+      state.trendCategory = '';
+      state.yearRows = {};
       state.securityShown = false;
       state.suggestions = [];
       showAuth();
