@@ -89,13 +89,18 @@
         <ul id="cats-expense" class="cat-list"></ul>
         <h3 class="section-title">Receitas</h3>
         <ul id="cats-income" class="cat-list"></ul>
+
+        <h3 class="section-title">Conta</h3>
+        <p id="account-email" class="account-email"></p>
+        <p class="account-note">Excluir a conta apaga também todos os seus lançamentos e categorias.</p>
+        <button id="delete-open" class="btn danger" type="button">Excluir minha conta</button>
       </section>
     </main>
 
     <nav class="tabbar" aria-label="Principal">
       <button class="tab" type="button" data-tab="summary" aria-current="page">Resumo</button>
       <button class="tab" type="button" data-tab="list">Lançamentos</button>
-      <button class="tab" type="button" data-tab="categories">Categorias</button>
+      <button class="tab" type="button" data-tab="categories">Ajustes</button>
     </nav>
     <button id="fab" class="fab" type="button" aria-label="Novo lançamento">+</button>
   </div>
@@ -129,6 +134,23 @@
         <button id="tx-delete" class="btn danger" type="button" hidden>Excluir</button>
         <button id="tx-cancel" class="btn" type="button">Cancelar</button>
         <button id="tx-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-sheet" class="sheet" aria-labelledby="delete-title">
+    <form id="delete-form" method="dialog" novalidate>
+      <h3 id="delete-title">Excluir conta</h3>
+      <p class="account-note">Isso apaga sua conta, todos os lançamentos e todas as categorias. Não dá para desfazer.</p>
+
+      <label for="delete-confirm">Digite <strong>excluir</strong> para confirmar</label>
+      <input id="delete-confirm" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
+
+      <p id="delete-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="delete-cancel" class="btn" type="button">Cancelar</button>
+        <button id="delete-submit" class="btn danger" type="submit" disabled>Excluir conta</button>
       </div>
     </form>
   </dialog>

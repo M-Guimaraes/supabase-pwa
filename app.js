@@ -111,7 +111,13 @@
     button.disabled = true;
     try {
       if (state.signupMode) {
-        const { data, error } = await sb.auth.signUp({ email, password });
+        // O link do e-mail de confirmação volta para este app. O endereço também
+        // precisa estar em Authentication → URL Configuration → Redirect URLs.
+        const { data, error } = await sb.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: location.origin + location.pathname },
+        });
         if (error) throw error;
         if (!data.session) {
           toast('Conta criada. Confirme seu e-mail pelo link que enviamos e depois entre.');
@@ -438,10 +444,49 @@
     await refresh();
   });
 
+  /* ---------- Excluir conta ---------- */
+
+  const deleteSheet = $('delete-sheet');
+
+  $('delete-open').addEventListener('click', () => {
+    $('delete-confirm').value = '';
+    $('delete-submit').disabled = true;
+    $('delete-error').hidden = true;
+    deleteSheet.showModal();
+    $('delete-confirm').focus();
+  });
+
+  $('delete-cancel').addEventListener('click', () => deleteSheet.close());
+
+  $('delete-confirm').addEventListener('input', (e) => {
+    $('delete-submit').disabled = e.target.value.trim().toLowerCase() !== 'excluir';
+  });
+
+  $('delete-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if ($('delete-confirm').value.trim().toLowerCase() !== 'excluir') return;
+
+    const submit = $('delete-submit');
+    submit.disabled = true;
+    const { error } = await sb.rpc('delete_my_account');
+    if (error) {
+      submit.disabled = false;
+      $('delete-error').textContent = friendlyError(error);
+      $('delete-error').hidden = false;
+      return;
+    }
+
+    deleteSheet.close();
+    // A conta já não existe: encerra só a sessão local, sem chamar o servidor.
+    await sb.auth.signOut({ scope: 'local' });
+    toast('Conta excluída');
+  });
+
   /* ---------- Início ---------- */
 
   sb.auth.onAuthStateChange((_event, session) => {
     const userId = session ? session.user.id : null;
+    if (session) $('account-email').textContent = session.user.email || '';
     if (userId === state.userId) return;
     state.userId = userId;
     if (userId) {

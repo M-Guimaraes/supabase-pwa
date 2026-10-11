@@ -74,3 +74,22 @@ revoke all on function public.seed_default_categories() from public, anon, authe
 create trigger on_auth_user_created_seed_categories
   after insert on auth.users
   for each row execute function public.seed_default_categories();
+
+-- Exclusão da própria conta (chamada pelo app em "Ajustes → Excluir minha conta").
+-- Apaga o usuário; categories e transactions saem junto por "on delete cascade".
+create or replace function public.delete_my_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke all on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;
