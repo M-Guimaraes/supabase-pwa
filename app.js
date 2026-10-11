@@ -583,6 +583,8 @@
       if (t.dataset.tab === name) t.setAttribute('aria-current', 'page');
       else t.removeAttribute('aria-current');
     });
+    // O botão de novo lançamento só aparece na aba Lançamentos.
+    $('fab').hidden = name !== 'list';
     window.scrollTo(0, 0);
     if (name === 'categories') {
       try { localStorage.setItem('caixa-categorias-vistas', '1'); } catch (err) { /* sem problema */ }

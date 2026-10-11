@@ -15,6 +15,10 @@ problems = []
 def check(cond, msg):
     print(('OK   ' if cond else 'FAIL ') + msg)
     if not cond: problems.append(msg)
+def fab(page):
+    page.click('[data-tab=list]')
+    page.click('#fab')
+
 def go_settings(page):
     page.click('[data-tab=categories]')
     page.evaluate("document.querySelectorAll('details.group').forEach(d => d.open = true)")
@@ -30,14 +34,18 @@ with sync_playwright() as p:
     page.wait_for_selector('#app:not([hidden])')
     page.wait_for_timeout(500)
     today = datetime.date.today()
+    check(page.is_hidden('#fab'), 'botão + escondido no Resumo')
+    page.click('[data-tab=list]'); check(page.is_visible('#fab'), 'botão + aparece em Lançamentos')
+    go_settings(page); check(page.is_hidden('#fab'), 'botão + escondido em Ajustes')
+    page.click('[data-tab=summary]')
     check(page.is_visible('#onboarding'), 'primeiros passos aparecem para conta vazia')
     page.click('#onb-first'); page.wait_for_selector('#sheet[open]'); page.click('#tx-cancel')
     # transação
-    page.click('#fab'); page.fill('#tx-amount', '80,00'); page.select_option('#tx-category', 'cat-mercado'); page.fill('#tx-desc', 'Mercado Central'); page.click('#tx-save')
+    fab(page); page.fill('#tx-amount', '80,00'); page.select_option('#tx-category', 'cat-mercado'); page.fill('#tx-desc', 'Mercado Central'); page.click('#tx-save')
     page.wait_for_timeout(500)
     check(len(page.evaluate('__db.transactions')) == 1, 'lançamento salvo')
     check(page.is_hidden('#onboarding'), 'primeiros passos somem depois do primeiro lançamento')
-    page.click('#fab')
+    fab(page)
     check(page.is_visible('#tx-repeat'), 'botão repetir visível: ' + page.inner_text('#tx-repeat'))
     page.fill('#tx-desc', 'Mercado Central 77')
     check(page.input_value('#tx-category') == 'cat-mercado', 'categoria sugerida pela descrição')
