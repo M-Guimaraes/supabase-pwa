@@ -11,7 +11,7 @@ Estados possíveis: pendente, em andamento, concluído.
 | 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | implementado, falta testar no celular |
 | 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV e metas implementados, falta testar; offline e casais pendentes |
 | 2 | Menos digitação manual | 5 | implementado, falta testar no celular |
-| 5 | Segurança e controle dos dados | 6 | pendente |
+| 5 | Segurança e controle dos dados | 6 | implementado no app; falta aplicar a migration das duas etapas e ligar a proteção de senhas vazadas |
 | 6 | Preço baixo e simplicidade | 7 | pendente |
 | 1B | Sincronização automática (Open Finance) | 8 | pendente |
 
@@ -78,7 +78,11 @@ Pronto quando: registrar uma despesa comum em até 3 toques.
 
 ## 5. Segurança e controle dos dados
 
-Status: pendente
+Status: implementado em 11/10/2026. Pendências do usuário: rodar o SQL das duas etapas no Supabase (último bloco de `supabase/schema.sql`), ligar a proteção contra senhas vazadas (item 1, painel do Supabase, pode exigir plano pago) e testar no celular.
+
+Feito: autenticação em dois fatores (TOTP) opcional em Ajustes → Segurança, com tela de código ao entrar; regra restritiva no banco (`private.aal_ok()`) que exige sessão aal2 de quem ativou, para não dar para contornar chamando a API com a senha; excluir conta também exige; botão "Baixar todos os dados" (JSON); texto de privacidade em Ajustes; política de conteúdo (CSP) por meta tag, já que o GitHub Pages não deixa configurar cabeçalhos; segurança do Supabase conferida a cada migration. Teste de fumaça no navegador em `tests/smoke/`.
+
+Limite conhecido: sem acesso a cabeçalhos HTTP, `frame-ancestors` e HSTS dependem do GitHub Pages.
 
 1. Ligar a proteção contra senhas vazadas no Supabase Auth (verificar se o plano permite).
 2. Autenticação em dois fatores (TOTP) opcional.

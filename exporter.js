@@ -82,5 +82,10 @@
     return info;
   }
 
-  return { transactionsToCSV, exportFileName, safeText, goalInfo };
+  // Cópia completa dos dados do usuário, em JSON legível.
+  function buildBackup(tables, now) {
+    return JSON.stringify({ app: 'Caixa', version: 1, exportedAt: now.toISOString(), data: tables }, null, 2);
+  }
+
+  return { transactionsToCSV, exportFileName, safeText, goalInfo, buildBackup };
 });

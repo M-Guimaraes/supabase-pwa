@@ -163,8 +163,9 @@ input[type="date"], input[type="number"], input[type="month"], select {
   text-align: center;
   font-size: 1.05rem;
   font-weight: 700;
-  text-transform: capitalize;
+  text-transform: none;
 }
+.month-nav h2::first-letter { text-transform: uppercase; }
 .icon-btn {
   appearance: none;
   border: 0;
@@ -335,6 +336,24 @@ main { padding: 0 1rem; }
 .goal-bar span { display: block; height: 100%; background: var(--pos); border-radius: 99px; }
 .goal-note { margin: -0.3rem 0.9rem 0.7rem; font-size: 0.85rem; color: var(--ink-soft); }
 .goal-note.late { color: var(--neg); font-weight: 600; }
+
+/* ---------- Segurança e privacidade ---------- */
+
+.mfa-qr { display: block; margin: 0.5rem auto; background: #fff; padding: 8px; border-radius: 12px; }
+.mfa-secret {
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  border-radius: 10px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+#mfa-code, #mfa-enroll-code { font-size: 1.4rem; letter-spacing: 0.3em; text-align: center; }
+.privacy { background: var(--surface); border-radius: var(--radius); padding: 0 0.9rem 0.6rem; }
+.privacy summary { display: flex; align-items: center; min-height: 48px; font-weight: 600; cursor: pointer; }
+.privacy p { margin-top: 0.6rem; font-size: 0.92rem; color: var(--ink-soft); }
 
 /* ---------- Digitar menos ---------- */
 

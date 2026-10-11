@@ -21,6 +21,7 @@
     budgets: [],
     bills: [],
     goals: [],
+    securityShown: false,
     hints: null,
     shortcut: Quick.parseShortcut(location.search),
     categoryTouched: false,
@@ -80,6 +81,7 @@
     if (/already registered/i.test(msg)) return 'Já existe uma conta com esse e-mail. Tente entrar.';
     if (/password should be at least/i.test(msg)) return 'A senha precisa ter pelo menos 6 caracteres.';
     if (/email not confirmed/i.test(msg)) return 'Confirme seu e-mail pelo link que enviamos e tente de novo.';
+    if (/invalid totp|mfa verification failed|invalid.*code/i.test(msg)) return 'Código incorreto. Confira o app e tente de novo.';
     if (/rate limit/i.test(msg)) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
     if (/failed to fetch|network/i.test(msg)) return 'Sem conexão. Verifique a internet e tente de novo.';
     return msg || 'Algo deu errado. Tente de novo.';
@@ -89,12 +91,23 @@
 
   function showAuth() {
     $('app').hidden = true;
+    $('mfa').hidden = true;
     $('auth').hidden = false;
   }
 
   function showApp() {
     $('auth').hidden = true;
+    $('mfa').hidden = true;
     $('app').hidden = false;
+  }
+
+  function showMfa() {
+    $('auth').hidden = true;
+    $('app').hidden = true;
+    $('mfa').hidden = false;
+    $('mfa-error').hidden = true;
+    $('mfa-code').value = '';
+    $('mfa-code').focus();
   }
 
   function setAuthMode(signup) {
@@ -149,6 +162,62 @@
   });
 
   $('logout').addEventListener('click', async () => {
+    await sb.auth.signOut();
+  });
+
+  /* ---------- Segunda etapa (TOTP) ---------- */
+
+  async function verifiedFactor() {
+    const { data, error } = await sb.auth.mfa.listFactors();
+    if (error) throw error;
+    return data.totp && data.totp.length > 0 ? data.totp[0] : null;
+  }
+
+  // Sessão só com senha (aal1) e conta com 2FA: pede o código antes de mostrar o app.
+  async function enterApp() {
+    try {
+      const { data, error } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (!error && data.nextLevel === 'aal2' && data.currentLevel !== 'aal2') {
+        showMfa();
+        return;
+      }
+    } catch (err) {
+      // sem informação de nível: segue; o banco continua protegendo os dados
+    }
+    showApp();
+    switchTab('summary');
+    state.month = firstOfMonth(new Date());
+    state.lastGeneration = null;
+    refresh();
+  }
+
+  $('mfa-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('mfa-error');
+    errorBox.hidden = true;
+    const code = $('mfa-code').value.replace(/\s/g, '');
+    if (!/^\d{6}$/.test(code)) {
+      errorBox.textContent = 'Digite os 6 dígitos do código.';
+      errorBox.hidden = false;
+      return;
+    }
+    const button = $('mfa-submit');
+    button.disabled = true;
+    try {
+      const factor = await verifiedFactor();
+      if (!factor) throw new Error('Nenhum autenticador encontrado.');
+      const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
+      if (error) throw error;
+      await enterApp();
+    } catch (err) {
+      errorBox.textContent = friendlyError(err);
+      errorBox.hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('mfa-logout').addEventListener('click', async () => {
     await sb.auth.signOut();
   });
 
@@ -308,6 +377,7 @@
       state.hints = null;
     }
     render();
+    renderSecurityOnce();
     openShortcut();
   }
 
@@ -346,6 +416,12 @@
     renderBudgetSettings();
     renderBills();
     renderGoals();
+  }
+
+  function renderSecurityOnce() {
+    if (state.securityShown) return;
+    state.securityShown = true;
+    renderSecurity();
   }
 
   function renderSummary() {
@@ -1108,6 +1184,138 @@
     if (ok) billSheet.close();
   });
 
+  /* ---------- Segurança: ativar e desativar 2FA ---------- */
+
+  const mfaSheet = $('mfa-sheet');
+  let pendingFactorId = null;
+
+  async function renderSecurity() {
+    try {
+      const factor = await verifiedFactor();
+      $('mfa-status').textContent = factor
+        ? 'Verificação em duas etapas ativa. Ao entrar, o app pede o código do autenticador.'
+        : 'Adicione uma segunda etapa ao entrar: um código de 6 dígitos de um app autenticador.';
+      $('mfa-enable').hidden = !!factor;
+      $('mfa-disable').hidden = !factor;
+    } catch (err) {
+      $('mfa-status').textContent = 'Não foi possível verificar a segurança da conta agora.';
+      $('mfa-enable').hidden = true;
+      $('mfa-disable').hidden = true;
+    }
+  }
+
+  async function discardPendingFactor() {
+    if (!pendingFactorId) return;
+    const id = pendingFactorId;
+    pendingFactorId = null;
+    try { await sb.auth.mfa.unenroll({ factorId: id }); } catch (err) { /* já removido */ }
+  }
+
+  $('mfa-enable').addEventListener('click', async () => {
+    const button = $('mfa-enable');
+    button.disabled = true;
+    try {
+      // Remove tentativas anteriores que ficaram sem confirmar.
+      const { data: all } = await sb.auth.mfa.listFactors();
+      for (const f of (all && all.all) || []) {
+        if (f.status !== 'verified') await sb.auth.mfa.unenroll({ factorId: f.id });
+      }
+      const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Caixa' });
+      if (error) throw error;
+      pendingFactorId = data.id;
+      $('mfa-qr').src = data.totp.qr_code;
+      $('mfa-secret').textContent = data.totp.secret;
+      $('mfa-enroll-code').value = '';
+      $('mfa-enroll-error').hidden = true;
+      mfaSheet.showModal();
+      $('mfa-enroll-code').focus();
+    } catch (err) {
+      toast(friendlyError(err));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('mfa-enroll-cancel').addEventListener('click', () => mfaSheet.close());
+  mfaSheet.addEventListener('close', discardPendingFactor);
+
+  $('mfa-enroll-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('mfa-enroll-error');
+    errorBox.hidden = true;
+    const code = $('mfa-enroll-code').value.replace(/\s/g, '');
+    if (!/^\d{6}$/.test(code)) {
+      errorBox.textContent = 'Digite os 6 dígitos do código.';
+      errorBox.hidden = false;
+      return;
+    }
+    const button = $('mfa-enroll-submit');
+    button.disabled = true;
+    const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: pendingFactorId, code });
+    button.disabled = false;
+    if (error) {
+      errorBox.textContent = friendlyError(error);
+      errorBox.hidden = false;
+      return;
+    }
+    pendingFactorId = null; // confirmado: não descartar ao fechar
+    mfaSheet.close();
+    toast('Verificação em duas etapas ativada');
+    await renderSecurity();
+  });
+
+  $('mfa-disable').addEventListener('click', async () => {
+    if (!confirm('Desativar a verificação em duas etapas? Sua conta volta a pedir só a senha.')) return;
+    try {
+      const factor = await verifiedFactor();
+      if (factor) {
+        const { error } = await sb.auth.mfa.unenroll({ factorId: factor.id });
+        if (error) throw error;
+      }
+      toast('Verificação em duas etapas desativada');
+    } catch (err) {
+      toast(friendlyError(err));
+    }
+    await renderSecurity();
+  });
+
+  /* ---------- Baixar todos os dados ---------- */
+
+  async function fetchAllRows(table) {
+    const all = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from(table).select('*').order('created_at').order('id').range(from, from + 999);
+      if (error) throw error;
+      all.push(...data);
+      if (data.length < 1000) return all;
+    }
+  }
+
+  $('backup-download').addEventListener('click', async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    try {
+      const tables = {};
+      for (const t of ['categories', 'transactions', 'recurring_transactions', 'budgets', 'bills', 'goals']) {
+        tables[t] = await fetchAllRows(t);
+      }
+      const json = Extras.buildBackup(tables, new Date());
+      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      const a = el('a');
+      a.href = url;
+      a.download = `caixa-backup-${ymd(new Date())}.json`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast('Cópia dos dados baixada');
+    } catch (err) {
+      toast(friendlyError(err));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   /* ---------- Exportar CSV ---------- */
 
   function downloadText(text, filename) {
@@ -1680,12 +1888,8 @@
     if (userId === state.userId) return;
     state.userId = userId;
     if (userId) {
-      showApp();
-      switchTab('summary');
-      state.month = firstOfMonth(new Date());
-      state.lastGeneration = null;
       // adiado: não chamar o Supabase de dentro do callback de autenticação
-      setTimeout(refresh, 0);
+      setTimeout(enterApp, 0);
     } else {
       state.categories = [];
       state.transactions = [];
@@ -1694,6 +1898,7 @@
       state.bills = [];
       state.goals = [];
       state.hints = null;
+      state.securityShown = false;
       state.suggestions = [];
       showAuth();
     }

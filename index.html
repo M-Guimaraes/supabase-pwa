@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self' data:; connect-src 'self' https://nddrqvueykgyzjwjcygk.supabase.co https://cdn.jsdelivr.net; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="no-referrer">
   <title>Caixa — controle financeiro</title>
   <meta name="description" content="Controle de receitas e despesas que funciona no celular, mesmo offline.">
   <meta name="theme-color" content="#14213d">
@@ -30,6 +32,20 @@
         <button id="auth-submit" class="btn primary" type="submit">Entrar</button>
       </form>
       <button id="auth-toggle" class="btn link" type="button">Não tem conta? Criar conta</button>
+    </div>
+  </section>
+
+  <section id="mfa" class="auth" hidden>
+    <div class="auth-card">
+      <h1 class="brand">Caixa</h1>
+      <p class="auth-lead">Digite o código de 6 dígitos do seu app autenticador.</p>
+      <form id="mfa-form" novalidate>
+        <label for="mfa-code">Código</label>
+        <input id="mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" required>
+        <p id="mfa-error" class="form-error" role="alert" hidden></p>
+        <button id="mfa-submit" class="btn primary" type="submit">Verificar</button>
+      </form>
+      <button id="mfa-logout" class="btn link" type="button">Sair</button>
     </div>
   </section>
 
@@ -137,6 +153,24 @@
           <button id="export-month" class="btn" type="button">Exportar mês</button>
           <button id="export-all" class="btn" type="button">Exportar tudo</button>
         </div>
+
+        <p class="account-note">Baixe uma cópia de tudo que está guardado na sua conta, em JSON.</p>
+        <button id="backup-download" class="btn" type="button">Baixar todos os dados</button>
+
+        <h3 class="section-title">Segurança</h3>
+        <p id="mfa-status" class="account-note"></p>
+        <button id="mfa-enable" class="btn" type="button" hidden>Ativar verificação em duas etapas</button>
+        <button id="mfa-disable" class="btn danger" type="button" hidden>Desativar verificação em duas etapas</button>
+
+        <h3 class="section-title">Privacidade</h3>
+        <details class="privacy">
+          <summary>O que fica guardado</summary>
+          <p>Seu e-mail e sua senha (a senha é guardada embaralhada pelo Supabase, nunca em texto) e o que você cadastra no app: lançamentos, categorias, lançamentos fixos, orçamento, contas a pagar e metas.</p>
+          <p>Os dados ficam no Supabase, nos Estados Unidos, e cada conta só enxerga as próprias linhas. O app não tem anúncios nem rastreadores, e não vende nem compartilha dados.</p>
+          <p>Extratos que você importa são lidos no seu aparelho. Só os lançamentos que você confirmar são salvos; o arquivo em si não é enviado.</p>
+          <p>A biblioteca de acesso ao Supabase é carregada do jsDelivr, que vê o endereço de internet de quem abre o app.</p>
+          <p>Você pode baixar tudo em "Baixar todos os dados" e apagar tudo em "Excluir minha conta".</p>
+        </details>
 
         <h3 class="section-title">Conta</h3>
         <p id="account-email" class="account-email"></p>
@@ -305,6 +339,26 @@
         <button id="goal-delete" class="btn danger" type="button" hidden>Excluir</button>
         <button id="goal-cancel" class="btn" type="button">Cancelar</button>
         <button id="goal-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="mfa-sheet" class="sheet" aria-labelledby="mfa-sheet-title">
+    <form id="mfa-enroll-form" method="dialog" novalidate>
+      <h3 id="mfa-sheet-title">Ativar duas etapas</h3>
+      <p class="account-note">Abra um app autenticador (Google Authenticator, Microsoft Authenticator, Authy ou o de um gerenciador de senhas) e escaneie o QR. Se estiver no mesmo celular, copie o código abaixo e cole no app.</p>
+      <img id="mfa-qr" class="mfa-qr" alt="QR code para o app autenticador" width="180" height="180">
+      <p class="account-note">Código para digitar no app:</p>
+      <p id="mfa-secret" class="mfa-secret"></p>
+
+      <label for="mfa-enroll-code">Código de 6 dígitos mostrado no app</label>
+      <input id="mfa-enroll-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" required>
+
+      <p id="mfa-enroll-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="mfa-enroll-cancel" class="btn" type="button">Cancelar</button>
+        <button id="mfa-enroll-submit" class="btn primary" type="submit">Ativar</button>
       </div>
     </form>
   </dialog>

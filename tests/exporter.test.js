@@ -61,3 +61,13 @@ test('meta concluída e meta com prazo vencido', () => {
   assert.equal(late.overdue, true);
   assert.equal(late.perMonth, 400);
 });
+
+test('backup JSON: identifica o app, a data e guarda as tabelas', () => {
+  const json = X.buildBackup({ categories: [{ id: 'a' }], transactions: [] }, new Date('2026-10-11T20:00:00Z'));
+  const parsed = JSON.parse(json);
+  assert.equal(parsed.app, 'Caixa');
+  assert.equal(parsed.version, 1);
+  assert.equal(parsed.exportedAt, '2026-10-11T20:00:00.000Z');
+  assert.deepEqual(parsed.data.categories, [{ id: 'a' }]);
+  assert.deepEqual(parsed.data.transactions, []);
+});

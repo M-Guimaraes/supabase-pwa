@@ -196,3 +196,68 @@ create policy "goals_update_own" on public.goals
   for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 create policy "goals_delete_own" on public.goals
   for delete to authenticated using (user_id = (select auth.uid()));
+
+-- Verificação em duas etapas (TOTP) opcional. Quem ativou só acessa os dados com sessão
+-- aal2, então ela não pode ser contornada chamando a API direto com a senha. A função
+-- fica no schema "private", que a API não expõe.
+create schema if not exists private;
+
+create or replace function private.aal_ok()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select case
+    when exists (
+      select 1 from auth.mfa_factors
+      where user_id = (select auth.uid()) and status = 'verified'
+    ) then coalesce((select auth.jwt() ->> 'aal'), 'aal1') = 'aal2'
+    else true
+  end
+$$;
+
+revoke all on function private.aal_ok() from public, anon;
+grant usage on schema private to authenticated;
+grant execute on function private.aal_ok() to authenticated;
+
+create policy "require_aal2_if_enrolled" on public.categories
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.transactions
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.recurring_transactions
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.budgets
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.bills
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.goals
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+
+-- Excluir a conta também exige a segunda etapa de quem a ativou.
+create or replace function public.delete_my_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  if not private.aal_ok() then
+    raise exception 'mfa required';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke all on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;
