@@ -6,13 +6,14 @@ Estados possíveis: pendente, em andamento, concluído.
 
 | # | Tópico | Prioridade | Status |
 |---|---|---|---|
-| 4 | Gastos recorrentes e assinaturas | 1 | pendente |
-| 3 | Orçamento por categoria, alertas e lembretes de contas | 2 | pendente |
-| 7 | Itens menores: CSV, metas, offline e casais | 3 | pendente |
-| 2 | Menos digitação manual | 4 | pendente |
-| 5 | Segurança e controle dos dados | 5 | pendente |
-| 6 | Preço baixo e simplicidade | 6 | pendente |
-| 1 | Visão única das contas e sincronização automática | 7 | pendente |
+| 1A | Importar extrato (CSV e OFX) | 1 | pendente |
+| 4 | Gastos recorrentes e assinaturas | 2 | pendente |
+| 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | pendente |
+| 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | pendente |
+| 2 | Menos digitação manual | 5 | pendente |
+| 5 | Segurança e controle dos dados | 6 | pendente |
+| 6 | Preço baixo e simplicidade | 7 | pendente |
+| 1B | Sincronização automática (Open Finance) | 8 | pendente |
 
 A numeração segue a ordem da pesquisa; a prioridade é a ordem sugerida de execução.
 
@@ -46,7 +47,7 @@ Pronto quando: dá para ver quanto resta de cada categoria no mês.
 
 Status: pendente
 
-- **CSV:** exportar os lançamentos (do mês ou todos) e importar. Compartilha a base do tópico 1, Fase A.
+- **Exportar CSV:** baixar os lançamentos (do mês ou todos). A importação está no tópico 1A.
 - **Metas:** tabela `goals` (nome, valor alvo, prazo, valor guardado) com barra de progresso.
 - **Offline:** guardar lançamentos feitos sem internet numa fila local (IndexedDB) e enviar quando a conexão voltar. Hoje o app abre offline, mas os dados precisam de internet.
 - **Casais:** grupo familiar com membros e RLS compartilhado. É o mais complexo e exige desenho próprio, por isso fica por último.
@@ -91,21 +92,39 @@ Status: pendente
 
 Pronto quando: uma pessoa nova registra o primeiro lançamento sem ajuda.
 
-## 1. Visão única das contas e sincronização automática
+## 1A. Importar extrato (CSV e OFX)
 
-Status: pendente
+Status: pendente. Decidido em 11/10/2026 como primeira entrega, no lugar da sincronização automática, porque não tem custo e serve a todos os usuários.
 
-**Fase A (viável já):**
-1. Importar extrato em CSV ou OFX, com mapeamento de colunas.
-2. Detectar duplicados e mostrar uma prévia antes de salvar.
+1. **Entrada:** em Ajustes, botão "Importar extrato" que abre o seletor de arquivo. O arquivo é lido no próprio navegador e não é enviado a nenhum servidor; só os lançamentos que o usuário confirmar vão para o banco.
+2. **Leitor de OFX:** aceitar OFX 1.x (formato SGML) e 2.x (XML). Ler data, valor, descrição e o identificador único de cada lançamento (`FITID`). O tipo (receita ou despesa) vem do sinal do valor.
+3. **Leitor de CSV:** detectar o separador (`;` ou `,`), a codificação (UTF-8 ou Latin-1), a vírgula decimal e datas no formato dd/mm/aaaa. Tela para o usuário apontar quais colunas são data, descrição e valor, com o mapeamento lembrado para a próxima vez.
+4. **Duplicados:** nova migration com a coluna `external_id` em `transactions` e um índice único por usuário. Para OFX, usar o `FITID`; para CSV, um código calculado a partir de data, valor e descrição. Reimportar o mesmo arquivo não pode duplicar nada.
+5. **Prévia antes de salvar:** lista com os lançamentos encontrados, duplicados já marcados e desmarcados, escolha de categoria por linha e total de receitas e despesas do arquivo.
+6. **Categoria sugerida:** repetir a categoria de lançamentos anteriores com descrição parecida do próprio usuário.
+7. **Importação em lotes**, com aviso de progresso e de erros, e limite de tamanho de arquivo.
+8. **Testes** com arquivos de exemplo fictícios: OFX 1.x, OFX 2.x, CSV com `;` e vírgula decimal, CSV em Latin-1 e arquivo malformado.
 
-**Fase B (exploratória):**
-1. Avaliar agregadores de Open Finance (por exemplo, Pluggy e Belvo; verificar preço e termos).
-2. Conectar por uma Supabase Edge Function, para a chave do agregador nunca ficar no navegador.
+Para ajustar o leitor a dados reais, pedir um arquivo de exemplo do banco do usuário, com os valores trocados por fictícios.
 
-Decisões pendentes: custo por usuário, LGPD e consentimento.
+Pronto quando: importar um extrato real sem duplicar lançamentos, mesmo importando o mesmo arquivo duas vezes.
 
-Pronto quando (Fase A): importar um extrato real sem duplicar lançamentos.
+## 1B. Sincronização automática (Open Finance)
+
+Status: pendente, depois do 1A. Pesquisa de 11/10/2026:
+
+- Conectar direto aos bancos exige ser instituição homologada pelo Banco Central, o que não é realista para o projeto. O caminho é um agregador já homologado.
+- **Uso pessoal, gratuito:** o "Meu Pluggy" é descrito como gratuito para desenvolvedores testarem. Cada pessoa cria a própria conta na Pluggy, então serve para a conta do dono do projeto, mas não escala para outros usuários.
+- **Para todos os usuários:** plano pago de agregador. Uma página comparativa de terceiros lista a Pluggy a partir de R$ 2.500 por mês e a Belvo a partir de US$ 1.000 por mês; os conectores de Open Finance da Pluggy dependem de contato com o comercial. Confirmar valores direto com os fornecedores.
+- O consentimento é dado no ambiente do banco e pode ser revogado a qualquer momento. Dados bancários são sensíveis pela LGPD.
+
+Plano, se seguir adiante:
+1. Experimento só na conta do dono do projeto, com o Meu Pluggy.
+2. Chamadas por uma Supabase Edge Function, com as chaves guardadas como segredo no Supabase e nunca no navegador.
+3. Reaproveitar a coluna `external_id` e a detecção de duplicados do 1A.
+4. Só avaliar abrir para outros usuários se houver orçamento para um agregador pago.
+
+Pronto quando (experimento): lançamentos do próprio banco aparecem no app sem duplicar com os importados.
 
 ## Fontes da pesquisa
 
@@ -118,5 +137,14 @@ Pronto quando (Fase A): importar um extrato real sem duplicar lançamentos.
 - [Origin: apps de orçamento para casais](https://useorigin.com/resources/blog/best-budgeting-app-for-couples-in-2026)
 - [Tecnoblog: Pix Automático](https://tecnoblog.net/comunidade/t/pix-automatico-estreia-no-brasil-streamings-ja-testam-a-funcao/151941)
 - [InfoMoney: Open Finance no app do BB](https://www.infomoney.com.br/minhas-financas/open-finance-ganha-espaco-bb-ja-gerencia-r-7-bi-em-saldos-com-outros-bancos-em-app-de-gestao-financeira/)
+
+Para o Open Finance (tópico 1B):
+
+- [Pluggy: conectores Open Finance](https://docs.pluggy.ai/docs/open-finance-regulated)
+- [Actual Budget: integração com a Pluggy](https://actualbudget.org/docs/experimental/pluggyai)
+- [TabNews: uso do Meu Pluggy](https://www.tabnews.com.br/marlindo71/d39804a3-211a-4d45-8491-e4a36e85a6e8)
+- [Open Banking Tracker: Belvo vs Pluggy](https://openbankingtracker.com/api-aggregators/belvo/vs/pluggy)
+- [Finsiders: fim do limite de 12 meses no consentimento](https://finsidersbrasil.com.br/regulamentacao/bc-acaba-com-limite-de-12-meses-para-compartilhamento-de-dados-no-open-finance)
+- [Tecnospeed: glossário do Open Finance](https://blog.tecnospeed.com.br/glossario-open-finance-para-empresas-de-ti/)
 
 Algumas fontes são conteúdo de empresas do setor, e há poucas pesquisas com usuários brasileiros.
