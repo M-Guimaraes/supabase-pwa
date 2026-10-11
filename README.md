@@ -15,7 +15,7 @@ App de controle financeiro (PWA) feito com HTML, CSS e JavaScript puros. Os arqu
 - Segurança: verificação em duas etapas opcional (app autenticador), cópia de todos os dados em JSON, texto de privacidade e política de conteúdo (CSP) na página
 - Exportação de lançamentos em CSV, do mês ou de tudo (Ajustes → Dados)
 - Modo offline: o app abre sem internet com a última cópia dos dados; lançamentos novos ficam na fila do aparelho e sobem sozinhos quando a conexão volta (editar e excluir precisam de internet; sair do app apaga a cópia local)
-- Gráfico "Últimos 6 meses" no Resumo: receitas × despesas por mês, toque no mês para ver os valores e botão para ver em tabela
+- Gráfico "Últimos 6 meses" no Resumo: receitas × despesas por mês, toque no mês para ver os valores e botão para ver em tabela; a aba "Ano" mostra janeiro a dezembro com total do ano e navegação entre anos
 - Metas com valor, quanto já foi guardado, prazo e quanto guardar por mês (Ajustes → Metas)
 - Orçamento mensal por categoria, com barra de progresso e aviso a partir de 80% (Ajustes → Orçamento mensal)
 - Contas a pagar com vencimento: as que vencem em até 7 dias ou estão atrasadas aparecem no Resumo, e "Paguei" cria a despesa (Ajustes → Contas a pagar)

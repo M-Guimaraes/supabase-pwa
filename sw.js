@@ -1,4 +1,4 @@
-const CACHE = 'caixa-v10';
+const CACHE = 'caixa-v11';
 const SHELL = [
   './',
   'index.html',

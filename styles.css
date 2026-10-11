@@ -806,3 +806,12 @@ main { padding: 0 1rem; }
 .offline-banner.warn { border-bottom-color: var(--warn); }
 .offline-banner .link-btn { flex: none; background: none; border: 0; padding: 0.25rem 0; color: var(--brand); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .tx.pending .sub::after { content: ' · aguardando envio'; color: var(--warn); font-weight: 700; }
+
+.segmented.compact { max-width: 15rem; margin-bottom: 0.9rem; }
+.segmented.compact label { padding: 0.4rem; font-size: 0.8125rem; }
+.year-nav { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin: -0.2rem 0 0.8rem; }
+.year-nav strong { min-width: 4rem; text-align: center; font-family: var(--serif); font-variant-numeric: lining-nums; }
+.year-nav .icon-btn:disabled { opacity: 0.35; }
+.trend-note { margin: 0 0 0.4rem; font-size: 0.8125rem; color: var(--warn); }
+.trend-chart svg.dense .month-text { font-size: 10px; }
+.trend-table tfoot td { font-weight: 700; border-top: 2px solid var(--line-strong); border-bottom: 0; }

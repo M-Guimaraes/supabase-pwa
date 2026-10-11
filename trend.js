@@ -62,5 +62,17 @@
     return series.some((m) => m.income > 0 || m.expense > 0);
   }
 
-  return { monthlySeries, windowStart, niceScale, compact, hasData };
+  // Soma de uma série: receitas, despesas e saldo do período.
+  function totals(series) {
+    const income = round2(series.reduce((s, m) => s + m.income, 0));
+    const expense = round2(series.reduce((s, m) => s + m.expense, 0));
+    return { income, expense, balance: round2(income - expense) };
+  }
+
+  // Janeiro a dezembro de um ano, como [início, próximo ano) em 'AAAA-MM-DD'.
+  function yearRange(year) {
+    return { start: `${year}-01-01`, next: `${year + 1}-01-01` };
+  }
+
+  return { monthlySeries, windowStart, niceScale, compact, hasData, totals, yearRange };
 });

@@ -27,6 +27,10 @@
     trendRows: [],
     viewingCache: false,
     trendSel: null,
+    trendRange: '6m',
+    trendYear: new Date().getFullYear(),
+    yearRows: {},
+    yearPartial: false,
     pwFactorId: null,
     shortcut: Quick.parseShortcut(location.search),
     categoryTouched: false,
@@ -599,6 +603,7 @@
       state.trendRows = [];
     }
     state.viewingCache = false;
+    state.yearRows = {};
     if (state.trendRows.length || state.hasAnyTx === false) saveSnapshot();
     render();
     updateBanner();
@@ -671,10 +676,10 @@
     return `M${x} ${y + h}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + h}Z`;
   }
 
-  function fillTrendReadout(m) {
+  function fillTrendReadout(m, title) {
     const box = $('trend-readout');
     box.replaceChildren();
-    box.append(el('span', 'month', monthName(m)));
+    box.append(el('span', 'month', title || monthName(m)));
     const values = el('span', 'values');
     for (const [label, value] of [['Receitas', m.income], ['Despesas', m.expense], ['Saldo', m.balance]]) {
       const item = el('span');
@@ -684,11 +689,13 @@
     box.append(values);
   }
 
+  // i = null mostra o total do período (só na visão do ano).
   function selectTrendMonth(i) {
     state.trendSel = i;
     document.querySelectorAll('#trend-chart .hl').forEach((n, k) => n.classList.toggle('on', k === i));
     document.querySelectorAll('#trend-chart .month-text').forEach((n, k) => n.classList.toggle('on', k === i));
-    fillTrendReadout(state.trendSeries[i]);
+    if (i === null) fillTrendReadout({ ...Trend.totals(state.trendSeries) }, `Total de ${state.trendYear}`);
+    else fillTrendReadout(state.trendSeries[i]);
   }
 
   function drawTrendChart(series) {
@@ -697,9 +704,10 @@
     const scale = Trend.niceScale(Math.max(...series.map((m) => Math.max(m.income, m.expense))));
     const y = (v) => T + plotH - (v / scale.max) * plotH;
     const slot = plotW / series.length;
-    const barW = 16, gap = 2, pairW = barW * 2 + gap;
+    const barW = series.length > 6 ? 10 : 16, gap = 2, pairW = barW * 2 + gap;
 
-    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'group', 'aria-label': 'Receitas e despesas dos últimos 6 meses' });
+    const dense = series.length > 6;
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'group', 'aria-label': dense ? `Receitas e despesas de ${state.trendYear}` : 'Receitas e despesas dos últimos 6 meses' }, dense ? 'dense' : '');
     for (const tick of scale.ticks) {
       svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(tick), y2: y(tick) }, 'grid'));
       const t = svgEl('text', { x: L - 6, y: y(tick) + 3.5, 'text-anchor': 'end' }, 'axis-text');
@@ -724,7 +732,7 @@
       const hit = svgEl('rect', { x: L + i * slot, y: T, width: slot, height: plotH + B - 4, tabindex: 0, role: 'button', rx: 6 }, 'hit');
       hit.setAttribute('aria-label',
         `${monthName(m)}: receitas ${brl.format(m.income)}, despesas ${brl.format(m.expense)}, saldo ${brl.format(m.balance)}`);
-      hit.addEventListener('click', () => selectTrendMonth(i));
+      hit.addEventListener('click', () => selectTrendMonth(state.trendRange === 'year' && state.trendSel === i ? null : i));
       hit.addEventListener('focus', () => selectTrendMonth(i));
       hit.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') selectTrendMonth(i); });
       svg.append(hit);
@@ -743,21 +751,110 @@
     const body = el('tbody');
     for (const m of series) {
       const row = el('tr');
-      row.append(el('td', '', monthShort(m)), el('td', '', brl.format(m.income)), el('td', '', brl.format(m.expense)), el('td', '', brl.format(m.balance)));
+      const name = series.length > 6 ? shortMonth.format(new Date(m.year, m.month, 1)).replace('.', '') : monthShort(m);
+      row.append(el('td', '', name), el('td', '', brl.format(m.income)), el('td', '', brl.format(m.expense)), el('td', '', brl.format(m.balance)));
       body.append(row);
     }
     table.append(body);
+    if (series.length > 6) {
+      const sum = Trend.totals(series);
+      const foot = el('tfoot');
+      const row = el('tr');
+      row.append(el('td', '', 'Ano'), el('td', '', brl.format(sum.income)), el('td', '', brl.format(sum.expense)), el('td', '', brl.format(sum.balance)));
+      foot.append(row);
+      table.append(foot);
+    }
+  }
+
+  // Lançamentos do ano escolhido (só tipo, valor e data). Fica em cache até o próximo refresh.
+  async function loadYear(year) {
+    const { start, next } = Trend.yearRange(year);
+    const rows = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('type, amount, occurred_on')
+        .gte('occurred_on', start)
+        .lt('occurred_on', next)
+        .order('occurred_on')
+        .order('id')
+        .range(from, from + 999);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+    state.yearRows[year] = rows;
+  }
+
+  async function ensureYear() {
+    const year = state.trendYear;
+    state.yearPartial = false;
+    if (state.yearRows[year]) return;
+    if (!navigator.onLine || state.viewingCache) { state.yearPartial = true; return; }
+    try {
+      await loadYear(year);
+    } catch (err) {
+      state.yearPartial = true;
+      if (!Offline.isNetworkError(err)) toast(friendlyError(err));
+    }
   }
 
   function renderTrend() {
-    const series = Trend.monthlySeries(state.trendRows.concat(pendingList()), new Date());
-    $('trend').hidden = !Trend.hasData(series);
-    if (!Trend.hasData(series)) return;
+    const year = state.trendRange === 'year';
+    const now = new Date();
+    let series;
+    if (year) {
+      const rows = state.yearRows[state.trendYear] || state.trendRows;
+      series = Trend.monthlySeries(rows.concat(pendingList()), new Date(state.trendYear, 11, 1), 12);
+    } else {
+      series = Trend.monthlySeries(state.trendRows.concat(pendingList()), now);
+    }
+    $('trend-title').textContent = year ? `Ano de ${state.trendYear}` : 'Últimos 6 meses';
+    $('trend-year-nav').hidden = !year;
+    $('year-label').textContent = state.trendYear;
+    $('year-next').disabled = state.trendYear >= now.getFullYear();
+    $('trend-note').hidden = !(year && state.yearPartial);
+    $('trend-note').textContent = 'Sem conexão: mostrando só o que está salvo neste aparelho (últimos 6 meses).';
+    // o painel só some quando não há nada na visão de 6 meses e o usuário não está olhando o ano
+    const seriesRecent = Trend.monthlySeries(state.trendRows.concat(pendingList()), now);
+    $('trend').hidden = !(Trend.hasData(seriesRecent) || year);
+    if ($('trend').hidden) return;
     state.trendSeries = series;
+    if (!Trend.hasData(series)) {
+      $('trend-chart').replaceChildren(el('p', 'empty', `Nenhum lançamento em ${state.trendYear}.`));
+      $('trend-readout').replaceChildren();
+      fillTrendTable(series);
+      return;
+    }
     drawTrendChart(series);
     fillTrendTable(series);
-    selectTrendMonth(state.trendSel !== null && state.trendSel < series.length ? state.trendSel : series.length - 1);
+    let sel = state.trendSel;
+    if (year) sel = sel !== null && sel < series.length ? sel : null;
+    else sel = sel !== null && sel < series.length ? sel : series.length - 1;
+    selectTrendMonth(sel);
   }
+
+  async function setTrendRange(range) {
+    state.trendRange = range;
+    state.trendSel = range === 'year' ? null : state.trendSeries ? state.trendSeries.length - 1 : null;
+    if (range === 'year') await ensureYear();
+    renderTrend();
+  }
+
+  document.querySelectorAll('input[name=trange]').forEach((input) => {
+    input.addEventListener('change', () => { if (input.checked) setTrendRange(input.value); });
+  });
+
+  async function shiftYear(delta) {
+    const next = state.trendYear + delta;
+    if (next > new Date().getFullYear() || next < 2000) return;
+    state.trendYear = next;
+    state.trendSel = null;
+    await ensureYear();
+    renderTrend();
+  }
+  $('year-prev').addEventListener('click', () => shiftYear(-1));
+  $('year-next').addEventListener('click', () => shiftYear(1));
 
   $('trend-toggle').addEventListener('click', () => {
     const showTable = $('trend-table-wrap').hidden;

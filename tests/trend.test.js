@@ -55,3 +55,24 @@ test('rótulos compactos em português', () => {
   assert.equal(T.compact(2500), '2,5 mil');
   assert.equal(T.compact(1200000), '1,2 mi');
 });
+
+test('totals soma receitas, despesas e saldo da série', () => {
+  const s = T.monthlySeries([
+    { type: 'income', amount: 100.1, occurred_on: '2026-09-01' },
+    { type: 'expense', amount: 40.05, occurred_on: '2026-10-02' },
+    { type: 'expense', amount: 10, occurred_on: '2026-10-03' },
+  ], new Date(2026, 9, 11), 6);
+  assert.deepStrictEqual(T.totals(s), { income: 100.1, expense: 50.05, balance: 50.05 });
+});
+
+test('série de 12 meses ancorada em dezembro cobre janeiro a dezembro do ano', () => {
+  const s = T.monthlySeries([{ type: 'income', amount: 5, occurred_on: '2026-01-15' }], new Date(2026, 11, 1), 12);
+  assert.strictEqual(s.length, 12);
+  assert.strictEqual(s[0].key, '2026-01');
+  assert.strictEqual(s[11].key, '2026-12');
+  assert.strictEqual(s[0].income, 5);
+});
+
+test('yearRange devolve o intervalo do ano', () => {
+  assert.deepStrictEqual(T.yearRange(2026), { start: '2026-01-01', next: '2027-01-01' });
+});
