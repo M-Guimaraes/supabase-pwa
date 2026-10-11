@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Caixa — controle financeiro</title>
+  <meta name="description" content="Controle de receitas e despesas que funciona no celular, mesmo offline.">
+  <meta name="theme-color" content="#14213d">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Caixa">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <section id="auth" class="auth" hidden>
+    <div class="auth-card">
+      <h1 class="brand">Caixa</h1>
+      <p class="auth-lead">Suas receitas e despesas em um só lugar.</p>
+      <form id="auth-form" novalidate>
+        <label for="auth-email">E-mail</label>
+        <input id="auth-email" type="email" autocomplete="email" inputmode="email" required>
+        <label for="auth-password">Senha</label>
+        <input id="auth-password" type="password" autocomplete="current-password" minlength="6" required>
+        <p id="auth-error" class="form-error" role="alert" hidden></p>
+        <button id="auth-submit" class="btn primary" type="submit">Entrar</button>
+      </form>
+      <button id="auth-toggle" class="btn link" type="button">Não tem conta? Criar conta</button>
+    </div>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="month-nav">
+        <button id="month-prev" class="icon-btn" type="button" aria-label="Mês anterior">‹</button>
+        <h2 id="month-label" aria-live="polite"></h2>
+        <button id="month-next" class="icon-btn" type="button" aria-label="Próximo mês">›</button>
+      </div>
+      <button id="logout" class="btn link small" type="button">Sair</button>
+    </header>
+
+    <main>
+      <section id="view-summary" class="view" data-view="summary">
+        <div class="balance">
+          <span class="balance-caption">Saldo do mês</span>
+          <strong id="balance-value" class="balance-value">R$ 0,00</strong>
+          <div class="split" aria-hidden="true">
+            <span id="split-income" class="split-income"></span>
+            <span id="split-expense" class="split-expense"></span>
+          </div>
+          <dl class="totals">
+            <div>
+              <dt>Receitas</dt>
+              <dd id="total-income" class="pos">R$ 0,00</dd>
+            </div>
+            <div>
+              <dt>Despesas</dt>
+              <dd id="total-expense" class="neg">R$ 0,00</dd>
+            </div>
+          </dl>
+        </div>
+
+        <h3 class="section-title">Para onde foi o dinheiro</h3>
+        <ul id="breakdown" class="breakdown"></ul>
+        <p id="breakdown-empty" class="empty" hidden>Nenhuma despesa neste mês. Toque em + para registrar a primeira.</p>
+      </section>
+
+      <section id="view-list" class="view" data-view="list" hidden>
+        <div id="tx-groups"></div>
+        <p id="tx-empty" class="empty" hidden>Nenhum lançamento neste mês. Toque em + para adicionar.</p>
+      </section>
+
+      <section id="view-categories" class="view" data-view="categories" hidden>
+        <form id="cat-form" class="cat-form" novalidate>
+          <label for="cat-name" class="sr-only">Nome da categoria</label>
+          <input id="cat-name" type="text" placeholder="Nova categoria" maxlength="40" required>
+          <label for="cat-type" class="sr-only">Tipo</label>
+          <select id="cat-type">
+            <option value="expense">Despesa</option>
+            <option value="income">Receita</option>
+          </select>
+          <button class="btn primary" type="submit">Adicionar</button>
+        </form>
+        <h3 class="section-title">Despesas</h3>
+        <ul id="cats-expense" class="cat-list"></ul>
+        <h3 class="section-title">Receitas</h3>
+        <ul id="cats-income" class="cat-list"></ul>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="Principal">
+      <button class="tab" type="button" data-tab="summary" aria-current="page">Resumo</button>
+      <button class="tab" type="button" data-tab="list">Lançamentos</button>
+      <button class="tab" type="button" data-tab="categories">Categorias</button>
+    </nav>
+    <button id="fab" class="fab" type="button" aria-label="Novo lançamento">+</button>
+  </div>
+
+  <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+    <form id="tx-form" method="dialog" novalidate>
+      <h3 id="sheet-title">Novo lançamento</h3>
+
+      <div class="segmented" role="radiogroup" aria-label="Tipo">
+        <input type="radio" name="type" id="type-expense" value="expense" checked>
+        <label for="type-expense">Despesa</label>
+        <input type="radio" name="type" id="type-income" value="income">
+        <label for="type-income">Receita</label>
+      </div>
+
+      <label for="tx-amount">Valor</label>
+      <input id="tx-amount" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+
+      <label for="tx-desc">Descrição</label>
+      <input id="tx-desc" type="text" maxlength="80" placeholder="Ex.: Mercado" autocomplete="off">
+
+      <label for="tx-category">Categoria</label>
+      <select id="tx-category"></select>
+
+      <label for="tx-date">Data</label>
+      <input id="tx-date" type="date" required>
+
+      <p id="tx-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="tx-delete" class="btn danger" type="button" hidden>Excluir</button>
+        <button id="tx-cancel" class="btn" type="button">Cancelar</button>
+        <button id="tx-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
