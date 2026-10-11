@@ -140,14 +140,25 @@ with sync_playwright() as p:
     ofx = ('<OFX><BANKTRANLIST>'
            '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261005<TRNAMT>-18.50<FITID>R1<MEMO>PADARIA SAO JOAO 0042</STMTTRN>'
            '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261006<TRNAMT>-30.00<FITID>R2<MEMO>LOJA SEM REGRA</STMTTRN>'
+           '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261008<TRNAMT>-77.70<FITID>R3<MEMO>OUTRO NOME NO OFX</STMTTRN>'
            '</BANKTRANLIST></OFX>')
+    page.evaluate("__db.transactions.push({id:'csv1',type:'expense',amount:77.7,description:'Nome no CSV',category_id:null,occurred_on:'2026-10-08',created_at:'a',external_id:'csv:zzz:1',user_id:'u1'})")
     go_settings(page); page.click('#import-open'); page.wait_for_selector('#import-sheet[open]')
     page.set_input_files('#import-file', files=[{'name': 'e.ofx', 'mimeType': 'application/x-ofx', 'buffer': ofx.encode()}])
     page.wait_for_selector('#import-list li'); page.wait_for_timeout(300)
     check(page.locator('#import-list select').first.input_value() == 'cat-mercado', 'importação aplica a regra')
     check('por regra' in page.locator('#import-list li').first.inner_text(), 'linha indica categoria por regra')
     check(page.locator('#import-list select').nth(1).input_value() == '', 'sem regra fica sem categoria')
+    check(page.locator('#import-list li.dup').count() == 1 and 'outro arquivo' in page.locator('#import-list li.dup').inner_text(), 'mesmo lançamento do CSV é reconhecido no OFX')
+    check('1 já importados' in page.inner_text('#import-summary'), 'resumo conta o repetido: ' + page.inner_text('#import-summary'))
+    check(page.locator('#import-list li.dup input').is_disabled(), 'repetido não pode ser marcado')
     page.click('#import-cancel')
+    # limpeza de duplicados já salvos
+    page.evaluate("__db.transactions.push({id:'ofx1',type:'expense',amount:77.7,description:'Nome no OFX',category_id:null,occurred_on:'2026-10-08',created_at:'b',external_id:'ofx:QQ',user_id:'u1'})")
+    page.once('dialog', lambda d: d.accept())
+    go_settings(page); page.click('#dedupe-run'); page.wait_for_timeout(500)
+    left = page.evaluate("__db.transactions.filter(t => t.occurred_on === '2026-10-08' && t.amount === 77.7).length")
+    check(left == 1, 'limpeza deixou um de cada (sobraram %d)' % left)
     # aplicar regras aos já lançados
     page.evaluate("__db.transactions.push({id:'x1',type:'expense',amount:9,description:'Padaria Sao Joao',category_id:null,occurred_on:'2026-10-02',created_at:'z',external_id:null,user_id:'u1'})")
     go_settings(page); page.click('#rule-apply'); page.wait_for_timeout(500)

@@ -2203,6 +2203,8 @@
     items: [],
     existing: new Set(),
     similar: new Set(),
+    rows: [],
+    cross: new Set(),
     suggestions: null,
     selected: new Set(),
     category: new Map(),
@@ -2285,17 +2287,41 @@
   }
 
   // Lançamentos digitados à mão com mesma data, valor e tipo: provável repetição.
+  // Lançamentos já salvos no período do arquivo. Os de extrato (csv:/ofx:) servem para achar
+  // repetição entre formatos; os digitados, fixos e contas pagas só geram o aviso "parecido".
   async function findSimilar(items) {
     const dates = items.map((i) => i.date).sort();
-    const { data, error } = await sb
-      .from('transactions')
-      .select('occurred_on, amount, type')
-      .is('external_id', null)
-      .gte('occurred_on', dates[0])
-      .lte('occurred_on', dates[dates.length - 1])
-      .limit(1000);
-    if (error) throw error;
-    return new Set(data.map((r) => `${r.occurred_on}|${Number(r.amount).toFixed(2)}|${r.type}`));
+    const rows = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('occurred_on, amount, type, external_id')
+        .gte('occurred_on', dates[0])
+        .lte('occurred_on', dates[dates.length - 1])
+        .order('occurred_on')
+        .order('id')
+        .range(from, from + 999);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+    const similar = new Set();
+    for (const r of rows) {
+      const id = r.external_id || '';
+      if (id.startsWith('csv:') || id.startsWith('ofx:')) continue;
+      similar.add(`${r.occurred_on}|${Number(r.amount).toFixed(2)}|${r.type}`);
+    }
+    return { similar, rows };
+  }
+
+  // Já está no banco: pelo id, ou por data, tipo e valor vindos de outro arquivo de extrato.
+  function isDup(item) {
+    return imp.existing.has(item.externalId) || imp.cross.has(item.externalId);
+  }
+
+  function computeCross() {
+    const idx = Importer.crossDuplicates(imp.items, imp.rows, imp.invert);
+    imp.cross = new Set([...idx].map((i) => imp.items[i].externalId));
   }
 
   async function loadSuggestions() {
@@ -2328,7 +2354,7 @@
     imp.category = new Map();
     imp.source = new Map();
     imp.items.forEach((item, i) => {
-      const dup = imp.existing.has(item.externalId);
+      const dup = isDup(item);
       if (!dup && !isSimilar(item)) imp.selected.add(i);
       const v = Importer.view(item, imp.invert);
       const past = imp.suggestions && imp.suggestions.get(`${v.type}|${Importer.descriptionKey(item.description)}`);
@@ -2340,9 +2366,9 @@
 
   function updateImportSummary() {
     const total = imp.items.length;
-    const dups = imp.items.filter((it) => imp.existing.has(it.externalId)).length;
+    const dups = imp.items.filter(isDup).length;
     $('import-summary').textContent =
-      `${total} lançamentos no arquivo, ${total - dups} novos` + (dups ? ` e ${dups} já importados.` : '.');
+      `${total} lançamentos no arquivo, ${total - dups} novos` + (dups ? ` e ${dups} já importados (não serão repetidos).` : '.');
 
     let income = 0;
     let expense = 0;
@@ -2365,7 +2391,7 @@
 
     imp.items.forEach((item, i) => {
       const v = Importer.view(item, imp.invert);
-      const dup = imp.existing.has(item.externalId);
+      const dup = isDup(item);
       const similar = !dup && isSimilar(item);
 
       const li = el('li', `import-row ${v.type}${dup ? ' dup' : ''}`);
@@ -2380,7 +2406,7 @@
       });
 
       const text = el('span', 'import-text');
-      const note = dup ? 'Já importado' : similar ? 'Parecido com um lançamento seu' : '';
+      const note = dup ? (imp.existing.has(item.externalId) ? 'Já importado' : 'Já importado de outro arquivo') : similar ? 'Parecido com um lançamento seu' : '';
       const subText = () => {
         const src = imp.source.get(i);
         const how = !dup && src && imp.category.get(i) ? (src === 'rule' ? 'categoria por regra' : 'categoria pelo histórico') : '';
@@ -2450,12 +2476,14 @@
       }
 
       await Importer.withIds(items);
-      const [existing, similar] = await Promise.all([findExistingIds(items), findSimilar(items), loadSuggestions()]);
+      const [existing, found] = await Promise.all([findExistingIds(items), findSimilar(items), loadSuggestions()]);
       if (token !== imp.token) return;
 
       imp.items = items;
       imp.existing = existing;
-      imp.similar = similar;
+      imp.similar = found.similar;
+      imp.rows = found.rows;
+      computeCross();
       resetSelection();
       renderImport();
       $('import-review').hidden = false;
@@ -2464,6 +2492,42 @@
       resetImportReview();
     }
   }
+
+  // Remove duplicados que já estão salvos (mesmo extrato importado em CSV e em OFX).
+  $('dedupe-run').addEventListener('click', async () => {
+    if (!navigator.onLine) { toast('Sem conexão: precisa de internet.'); return; }
+    const button = $('dedupe-run');
+    button.disabled = true;
+    try {
+      const rows = [];
+      for (let from = 0; from < 50000; from += 1000) {
+        const { data, error } = await sb
+          .from('transactions')
+          .select('id, occurred_on, amount, type, external_id, created_at')
+          .not('external_id', 'is', null)
+          .order('id')
+          .range(from, from + 999);
+        if (error) throw error;
+        rows.push(...data);
+        if (data.length < 1000) break;
+      }
+      const ids = Importer.findImportedDuplicates(rows);
+      if (ids.length === 0) { toast('Nenhum duplicado encontrado'); return; }
+      const gone = new Set(ids);
+      const total = rows.filter((r) => gone.has(r.id)).reduce((s, r) => s + Number(r.amount), 0);
+      if (!confirm(`Encontrei ${ids.length} lançamento(s) repetido(s) entre extratos CSV e OFX, somando ${brl.format(total)}. Remover os repetidos e manter um de cada?`)) return;
+      for (let i = 0; i < ids.length; i += 80) {
+        const { error } = await sb.from('transactions').delete().in('id', ids.slice(i, i + 80));
+        if (error) throw error;
+      }
+      toast(ids.length === 1 ? '1 duplicado removido' : `${ids.length} duplicados removidos`);
+      await refresh();
+    } catch (err) {
+      toast(friendlyError(err));
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   $('import-open').addEventListener('click', () => {
     imp.parsed = null;
@@ -2517,6 +2581,7 @@
 
   $('import-invert').addEventListener('change', (e) => {
     imp.invert = e.target.checked;
+    computeCross();
     resetSelection();
     renderImport();
   });
@@ -2524,7 +2589,7 @@
   $('import-all').addEventListener('change', (e) => {
     imp.selected = new Set();
     if (e.target.checked) {
-      imp.items.forEach((item, i) => { if (!imp.existing.has(item.externalId)) imp.selected.add(i); });
+      imp.items.forEach((item, i) => { if (!isDup(item)) imp.selected.add(i); });
     }
     renderImport();
   });
@@ -2533,7 +2598,7 @@
     e.preventDefault();
     const rows = [];
     imp.items.forEach((item, i) => {
-      if (!imp.selected.has(i) || imp.existing.has(item.externalId)) return;
+      if (!imp.selected.has(i) || isDup(item)) return;
       const v = Importer.view(item, imp.invert);
       rows.push({
         user_id: state.userId,

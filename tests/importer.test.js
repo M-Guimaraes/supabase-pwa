@@ -116,3 +116,60 @@ test('chave de categoria ignora números, acentos e caixa', () => {
   assert.equal(I.descriptionKey('Pix enviado para JOÃO 123'), 'pix enviado para');
   assert.equal(I.descriptionKey('MERCADO  Exemplo 0042'), 'mercado exemplo');
 });
+
+test('crossDuplicates: o mesmo extrato em outro formato é reconhecido pela data, tipo e valor', () => {
+  const items = [
+    { date: '2026-10-05', signed: -18.5, externalId: 'ofx:A' },
+    { date: '2026-10-06', signed: 100, externalId: 'ofx:B' },
+    { date: '2026-10-07', signed: -9, externalId: 'ofx:C' },
+  ];
+  const existing = [
+    { occurred_on: '2026-10-05', type: 'expense', amount: '18.50', external_id: 'csv:x:1' },
+    { occurred_on: '2026-10-06', type: 'income', amount: 100, external_id: 'csv:y:1' },
+  ];
+  assert.deepEqual([...I.crossDuplicates(items, existing, false)], [0, 1]);
+});
+
+test('crossDuplicates: respeita a quantidade (dois iguais no banco, três no arquivo)', () => {
+  const items = [1, 2, 3].map((n) => ({ date: '2026-10-05', signed: -5, externalId: `ofx:K${n}` }));
+  const existing = [1, 2].map((n) => ({ occurred_on: '2026-10-05', type: 'expense', amount: 5, external_id: `csv:z:${n}` }));
+  assert.deepEqual([...I.crossDuplicates(items, existing, false)], [0, 1]);
+});
+
+test('crossDuplicates: quem já bate pelo id não consome a vaga de outro', () => {
+  const items = [
+    { date: '2026-10-05', signed: -5, externalId: 'ofx:K1' },
+    { date: '2026-10-05', signed: -5, externalId: 'ofx:K2' },
+  ];
+  const existing = [{ occurred_on: '2026-10-05', type: 'expense', amount: 5, external_id: 'ofx:K1' }];
+  assert.deepEqual([...I.crossDuplicates(items, existing, false)], []);
+});
+
+test('crossDuplicates: ignora lançamentos manuais, fixos e contas pagas e respeita a inversão de sinais', () => {
+  const items = [{ date: '2026-10-05', signed: -5, externalId: 'ofx:K1' }];
+  const existing = [{ occurred_on: '2026-10-05', type: 'expense', amount: 5, external_id: 'rec:1:2026-10' }, { occurred_on: '2026-10-05', type: 'expense', amount: 5, external_id: null }];
+  assert.equal(I.crossDuplicates(items, existing, false).size, 0);
+  const csv = [{ occurred_on: '2026-10-05', type: 'income', amount: 5, external_id: 'csv:a:1' }];
+  assert.equal(I.crossDuplicates(items, csv, true).size, 1);
+  assert.equal(I.crossDuplicates(items, csv, false).size, 0);
+});
+
+test('findImportedDuplicates: remove o formato com menos linhas e mantém o resto', () => {
+  const rows = [
+    { id: 'c1', occurred_on: '2026-10-05', type: 'expense', amount: 10, external_id: 'csv:a:1', created_at: '2026-10-10T10:00' },
+    { id: 'o1', occurred_on: '2026-10-05', type: 'expense', amount: 10, external_id: 'ofx:A', created_at: '2026-10-10T11:00' },
+    { id: 'c2', occurred_on: '2026-10-06', type: 'expense', amount: 7, external_id: 'csv:b:1', created_at: '2026-10-10T10:00' },
+    { id: 'm1', occurred_on: '2026-10-06', type: 'expense', amount: 7, external_id: null, created_at: '2026-10-10T10:00' },
+    { id: 'c3', occurred_on: '2026-10-07', type: 'income', amount: 50, external_id: 'csv:c:1', created_at: '2026-10-10T10:00' },
+  ];
+  assert.deepEqual(I.findImportedDuplicates(rows), ['o1']);
+});
+
+test('findImportedDuplicates: mantém o formato com mais linhas e remove só o par do outro', () => {
+  const mk = (id, ext, at) => ({ id, occurred_on: '2026-10-05', type: 'expense', amount: 5, external_id: ext, created_at: at });
+  const rows = [mk('c1', 'csv:a:1', '1'), mk('c2', 'csv:a:2', '1'), mk('o1', 'ofx:A', '2'), mk('o2', 'ofx:B', '2'), mk('o3', 'ofx:C', '2')];
+  assert.deepEqual(I.findImportedDuplicates(rows).sort(), ['c1', 'c2']);
+  // com menos linhas no formato novo, só o excedente do par sai
+  const rows2 = [mk('c1', 'csv:a:1', '1'), mk('c2', 'csv:a:2', '1'), mk('c3', 'csv:a:3', '1'), mk('o1', 'ofx:A', '2')];
+  assert.deepEqual(I.findImportedDuplicates(rows2), ['o1']);
+});

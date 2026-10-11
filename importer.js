@@ -315,7 +315,78 @@
     return norm(description).replace(/\d+/g, ' ').split(/\s+/).filter(Boolean).slice(0, 3).join(' ');
   }
 
+  /* ---------- Duplicados entre arquivos ---------- */
+
+  const isStatementId = (id) => typeof id === 'string' && (id.startsWith('csv:') || id.startsWith('ofx:'));
+  const sameKey = (date, type, amount) => `${date}|${type}|${Number(amount).toFixed(2)}`;
+
+  /*
+   * O mesmo extrato em OFX e em CSV gera ids diferentes, então o id sozinho não pega a repetição.
+   * Aqui compara data, tipo e valor com o que já veio de extratos (existing: linhas do banco com
+   * external_id csv:/ofx:), respeitando a quantidade: se o banco já tem 2 lançamentos de R$ 5 no
+   * dia, só os 2 primeiros do arquivo são considerados repetidos e um terceiro legítimo entra.
+   * Devolve o conjunto de índices de items que já existem.
+   */
+  function crossDuplicates(items, existing, invert) {
+    const rows = existing.filter((r) => isStatementId(r.external_id));
+    const counts = new Map();
+    for (const r of rows) {
+      const k = sameKey(r.occurred_on, r.type, r.amount);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const ids = new Set(rows.map((r) => r.external_id));
+    const keyOf = (item) => {
+      const v = view(item, invert);
+      return sameKey(item.date, v.type, v.amount);
+    };
+    // quem já bate pelo id usa a sua própria linha do banco
+    for (const item of items) {
+      if (!ids.has(item.externalId)) continue;
+      const k = keyOf(item);
+      if (counts.get(k) > 0) counts.set(k, counts.get(k) - 1);
+    }
+    const out = new Set();
+    items.forEach((item, i) => {
+      if (ids.has(item.externalId)) return;
+      const k = keyOf(item);
+      if (counts.get(k) > 0) {
+        counts.set(k, counts.get(k) - 1);
+        out.add(i);
+      }
+    });
+    return out;
+  }
+
+  /*
+   * Duplicados que já estão salvos: mesma data, tipo e valor vindos de formatos diferentes (csv x ofx).
+   * Mantém as linhas do formato com mais lançamentos (empate: o mais antigo) e devolve os ids das
+   * outras que têm par, sem passar da quantidade mantida.
+   */
+  function findImportedDuplicates(rows) {
+    const groups = new Map();
+    for (const r of rows) {
+      if (!isStatementId(r.external_id)) continue;
+      const k = sameKey(r.occurred_on, r.type, r.amount);
+      if (!groups.has(k)) groups.set(k, new Map());
+      const src = r.external_id.slice(0, 3);
+      const bySrc = groups.get(k);
+      if (!bySrc.has(src)) bySrc.set(src, []);
+      bySrc.get(src).push(r);
+    }
+    const remove = [];
+    for (const bySrc of groups.values()) {
+      if (bySrc.size < 2) continue;
+      const list = [...bySrc.values()].sort((a, b) =>
+        b.length - a.length || String(a[0].created_at).localeCompare(String(b[0].created_at)));
+      const keep = list[0];
+      const others = list.slice(1).flat().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      remove.push(...others.slice(0, Math.min(others.length, keep.length)).map((r) => r.id));
+    }
+    return remove;
+  }
+
   return {
+    crossDuplicates, findImportedDuplicates,
     decodeBytes, parseDate, parseNumber, detectNumberStyle, analyzeCSV, autoMap,
     mappingIsComplete, csvToItems, isOFX, parseOFX, withIds, parseStatement, view,
     descriptionKey,
