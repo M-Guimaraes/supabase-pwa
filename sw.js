@@ -1,4 +1,4 @@
-const CACHE = 'caixa-v6';
+const CACHE = 'caixa-v7';
 const SHELL = [
   './',
   'index.html',
@@ -10,6 +10,13 @@ const SHELL = [
   'quick.js',
   'app.js',
   'manifest.webmanifest',
+  'fonts/plex-serif-400.woff',
+  'fonts/plex-serif-700.woff',
+  'fonts/instrument-sans-400.woff',
+  'fonts/instrument-sans-700.woff',
+  'icons/logo.svg',
+  'icons/mark.svg',
+  'icons/guilloche.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',

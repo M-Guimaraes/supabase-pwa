@@ -23,6 +23,7 @@
     goals: [],
     securityShown: false,
     hints: null,
+    hasAnyTx: true,
     shortcut: Quick.parseShortcut(location.search),
     categoryTouched: false,
     editingGoal: null,
@@ -112,6 +113,7 @@
 
   function setAuthMode(signup) {
     state.signupMode = signup;
+    $('auth-title').textContent = signup ? 'Crie sua conta' : 'Acesse sua conta';
     $('auth-submit').textContent = signup ? 'Criar conta' : 'Entrar';
     $('auth-toggle').textContent = signup ? 'Já tem conta? Entrar' : 'Não tem conta? Criar conta';
     $('auth-password').autocomplete = signup ? 'new-password' : 'current-password';
@@ -282,6 +284,9 @@
       .limit(500);
     if (error) throw error;
     state.hints = Quick.buildHints(data);
+    const any = await sb.from('transactions').select('id').limit(1);
+    if (any.error) throw any.error;
+    state.hasAnyTx = any.data.length > 0;
   }
 
   async function loadRecurring() {
@@ -416,7 +421,27 @@
     renderBudgetSettings();
     renderBills();
     renderGoals();
+    renderOnboarding();
   }
+
+  // Quem ainda não tem nenhum dado vê os primeiros passos no Resumo.
+  function categoriesSeen() {
+    try { return localStorage.getItem('caixa-categorias-vistas') === '1'; } catch (err) { return false; }
+  }
+
+  function renderOnboarding() {
+    const fresh =
+      state.hints && !state.hasAnyTx && state.recurring.length === 0 && state.bills.length === 0 &&
+      state.budgets.length === 0 && state.goals.length === 0;
+    $('onboarding').hidden = !fresh;
+    const seen = categoriesSeen();
+    const step = $('onb-cats-step');
+    step.classList.toggle('done', seen);
+    step.querySelector('.step-mark').textContent = seen ? '✓' : '2';
+  }
+
+  $('onb-cats').addEventListener('click', () => switchTab('categories'));
+  $('onb-first').addEventListener('click', () => openSheet(null));
 
   function renderSecurityOnce() {
     if (state.securityShown) return;
@@ -559,6 +584,9 @@
       else t.removeAttribute('aria-current');
     });
     window.scrollTo(0, 0);
+    if (name === 'categories') {
+      try { localStorage.setItem('caixa-categorias-vistas', '1'); } catch (err) { /* sem problema */ }
+    }
   }
 
   document.querySelectorAll('.tab').forEach((t) =>

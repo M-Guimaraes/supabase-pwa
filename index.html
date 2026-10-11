@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <title>Caixa — controle financeiro</title>
   <meta name="description" content="Controle de receitas e despesas que funciona no celular, mesmo offline.">
-  <meta name="theme-color" content="#14213d">
+  <meta name="theme-color" content="#0B3C49">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -20,9 +20,13 @@
 <body>
 
   <section id="auth" class="auth" hidden>
-    <div class="auth-card">
+    <header class="auth-hero">
+      <img class="auth-mark" src="icons/mark.svg" alt="" width="44" height="44">
       <h1 class="brand">Caixa</h1>
-      <p class="auth-lead">Suas receitas e despesas em um só lugar.</p>
+      <p class="auth-lead">Suas finanças em ordem, sem planilha.</p>
+    </header>
+    <div class="auth-card">
+      <h2 id="auth-title" class="auth-title">Acesse sua conta</h2>
       <form id="auth-form" novalidate>
         <label for="auth-email">E-mail</label>
         <input id="auth-email" type="email" autocomplete="email" inputmode="email" required>
@@ -32,15 +36,20 @@
         <button id="auth-submit" class="btn primary" type="submit">Entrar</button>
       </form>
       <button id="auth-toggle" class="btn link" type="button">Não tem conta? Criar conta</button>
+      <p class="auth-foot">Seus dados ficam protegidos e só você os acessa.</p>
     </div>
   </section>
 
   <section id="mfa" class="auth" hidden>
-    <div class="auth-card">
+    <header class="auth-hero">
+      <img class="auth-mark" src="icons/mark.svg" alt="" width="44" height="44">
       <h1 class="brand">Caixa</h1>
-      <p class="auth-lead">Digite o código de 6 dígitos do seu app autenticador.</p>
+      <p class="auth-lead">Verificação em duas etapas</p>
+    </header>
+    <div class="auth-card">
+      <h2 class="auth-title">Digite o código do autenticador</h2>
       <form id="mfa-form" novalidate>
-        <label for="mfa-code">Código</label>
+        <label for="mfa-code">Código de 6 dígitos</label>
         <input id="mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" required>
         <p id="mfa-error" class="form-error" role="alert" hidden></p>
         <button id="mfa-submit" class="btn primary" type="submit">Verificar</button>
@@ -51,19 +60,24 @@
 
   <div id="app" class="app" hidden>
     <header class="topbar">
+      <img class="topbar-mark" src="icons/logo.svg" alt="Caixa" width="32" height="32">
       <div class="month-nav">
-        <button id="month-prev" class="icon-btn" type="button" aria-label="Mês anterior">‹</button>
+        <button id="month-prev" class="icon-btn" type="button" aria-label="Mês anterior">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg>
+        </button>
         <h2 id="month-label" aria-live="polite"></h2>
-        <button id="month-next" class="icon-btn" type="button" aria-label="Próximo mês">›</button>
+        <button id="month-next" class="icon-btn" type="button" aria-label="Próximo mês">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg>
+        </button>
       </div>
-      <button id="logout" class="btn link small" type="button">Sair</button>
+      <span class="topbar-spacer" aria-hidden="true"></span>
     </header>
 
     <main>
       <section id="view-summary" class="view" data-view="summary">
         <div class="balance">
           <span class="balance-caption">Saldo do mês</span>
-          <strong id="balance-value" class="balance-value">R$ 0,00</strong>
+          <strong id="balance-value" class="balance-value">R$ –</strong>
           <div class="split" aria-hidden="true">
             <span id="split-income" class="split-income"></span>
             <span id="split-expense" class="split-expense"></span>
@@ -81,19 +95,47 @@
           <p id="fixed-total" class="fixed-total" hidden></p>
         </div>
 
-        <div id="bills-due" hidden>
-          <h3 class="section-title">Contas a vencer</h3>
+        <section id="onboarding" class="panel" hidden>
+          <h3 class="panel-title">Primeiros passos</h3>
+          <ol class="steps">
+            <li class="done">
+              <span class="step-mark" aria-hidden="true">✓</span>
+              <div class="step-body"><strong>Criar a conta</strong><p>Pronto, você já está dentro.</p></div>
+            </li>
+            <li id="onb-cats-step">
+              <span class="step-mark" aria-hidden="true">2</span>
+              <div class="step-body">
+                <strong>Conferir as categorias</strong>
+                <p>Já deixamos as mais comuns. Ajuste do seu jeito.</p>
+                <button id="onb-cats" class="btn small" type="button">Ver categorias</button>
+              </div>
+            </li>
+            <li>
+              <span class="step-mark" aria-hidden="true">3</span>
+              <div class="step-body">
+                <strong>Registrar o primeiro lançamento</strong>
+                <p>Valor, descrição e pronto. Também dá para importar o extrato do banco.</p>
+                <button id="onb-first" class="btn small primary" type="button">Novo lançamento</button>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section id="bills-due" class="panel" hidden>
+          <h3 class="panel-title">Contas a vencer</h3>
           <ul id="bills-due-list" class="cat-list"></ul>
-        </div>
+        </section>
 
-        <div id="budget-progress" hidden>
-          <h3 class="section-title">Orçamento do mês</h3>
+        <section id="budget-progress" class="panel" hidden>
+          <h3 class="panel-title">Orçamento do mês</h3>
           <ul id="budget-list" class="breakdown budget"></ul>
-        </div>
+        </section>
 
-        <h3 class="section-title">Para onde foi o dinheiro</h3>
-        <ul id="breakdown" class="breakdown"></ul>
-        <p id="breakdown-empty" class="empty" hidden>Nenhuma despesa neste mês. Toque em + para registrar a primeira.</p>
+        <section class="panel">
+          <h3 class="panel-title">Para onde foi o dinheiro</h3>
+          <ul id="breakdown" class="breakdown"></ul>
+          <p id="breakdown-empty" class="empty" hidden>Nenhuma despesa neste mês. Toque em + para registrar a primeira.</p>
+        </section>
       </section>
 
       <section id="view-list" class="view" data-view="list" hidden>
@@ -102,89 +144,141 @@
       </section>
 
       <section id="view-categories" class="view" data-view="categories" hidden>
-        <form id="cat-form" class="cat-form" novalidate>
-          <label for="cat-name" class="sr-only">Nome da categoria</label>
-          <input id="cat-name" type="text" placeholder="Nova categoria" maxlength="40" required>
-          <label for="cat-type" class="sr-only">Tipo</label>
-          <select id="cat-type">
-            <option value="expense">Despesa</option>
-            <option value="income">Receita</option>
-          </select>
-          <button class="btn primary" type="submit">Adicionar</button>
-        </form>
-        <h3 class="section-title">Despesas</h3>
-        <ul id="cats-expense" class="cat-list"></ul>
-        <h3 class="section-title">Receitas</h3>
-        <ul id="cats-income" class="cat-list"></ul>
-
-        <h3 class="section-title">Metas</h3>
-        <p class="account-note">Guarde dinheiro para um objetivo e acompanhe o progresso.</p>
-        <ul id="goals-list" class="goal-list"></ul>
-        <p id="goals-empty" class="empty" hidden>Nenhuma meta ainda.</p>
-        <button id="goal-add" class="btn" type="button">Nova meta</button>
-
-        <h3 class="section-title">Orçamento mensal</h3>
-        <p class="account-note">Defina quanto pretende gastar por categoria. O Resumo avisa a partir de 80%.</p>
-        <ul id="budget-edit-list" class="rec-list"></ul>
-        <p id="budget-empty" class="empty" hidden>Nenhum limite definido ainda.</p>
-        <button id="budget-add" class="btn" type="button">Definir limite</button>
-
-        <h3 class="section-title">Contas a pagar</h3>
-        <p class="account-note">Cadastre contas com vencimento. As que vencem em até 7 dias aparecem no Resumo.</p>
-        <ul id="bills-list" class="rec-list"></ul>
-        <p id="bills-empty" class="empty" hidden>Nenhuma conta pendente.</p>
-        <button id="bill-add" class="btn" type="button">Nova conta</button>
-
-        <h3 class="section-title">Lançamentos fixos</h3>
-        <p class="account-note">Aluguel, assinaturas e salário entram sozinhos todo mês.</p>
-        <ul id="recurring-list" class="rec-list"></ul>
-        <p id="recurring-empty" class="empty" hidden>Nenhum lançamento fixo ainda.</p>
-        <div id="recurring-suggestions" hidden>
-          <h4 class="subsection">Parecem se repetir todo mês</h4>
-          <ul id="suggestion-list" class="cat-list"></ul>
-        </div>
-        <button id="recurring-add" class="btn" type="button">Novo lançamento fixo</button>
-
-        <h3 class="section-title">Dados</h3>
-        <p class="account-note">Traga lançamentos de um extrato do seu banco, em OFX ou CSV.</p>
-        <button id="import-open" class="btn" type="button">Importar extrato</button>
-        <p class="account-note">Baixe seus lançamentos em CSV, para abrir no Excel ou no Planilhas.</p>
-        <div class="btn-row">
-          <button id="export-month" class="btn" type="button">Exportar mês</button>
-          <button id="export-all" class="btn" type="button">Exportar tudo</button>
+        <div class="profile">
+          <span class="profile-badge" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.6-3.6 3.5-5.6 7-5.6s6.4 2 7 5.6"/></svg></span>
+          <div class="profile-text">
+            <span class="profile-caption">Conta</span>
+            <p id="account-email" class="account-email"></p>
+          </div>
+          <button id="logout" class="btn small" type="button">Sair</button>
         </div>
 
-        <p class="account-note">Baixe uma cópia de tudo que está guardado na sua conta, em JSON.</p>
-        <button id="backup-download" class="btn" type="button">Baixar todos os dados</button>
-
-        <h3 class="section-title">Segurança</h3>
-        <p id="mfa-status" class="account-note"></p>
-        <button id="mfa-enable" class="btn" type="button" hidden>Ativar verificação em duas etapas</button>
-        <button id="mfa-disable" class="btn danger" type="button" hidden>Desativar verificação em duas etapas</button>
-
-        <h3 class="section-title">Privacidade</h3>
-        <details class="privacy">
-          <summary>O que fica guardado</summary>
-          <p>Seu e-mail e sua senha (a senha é guardada embaralhada pelo Supabase, nunca em texto) e o que você cadastra no app: lançamentos, categorias, lançamentos fixos, orçamento, contas a pagar e metas.</p>
-          <p>Os dados ficam no Supabase, nos Estados Unidos, e cada conta só enxerga as próprias linhas. O app não tem anúncios nem rastreadores, e não vende nem compartilha dados.</p>
-          <p>Extratos que você importa são lidos no seu aparelho. Só os lançamentos que você confirmar são salvos; o arquivo em si não é enviado.</p>
-          <p>A biblioteca de acesso ao Supabase é carregada do jsDelivr, que vê o endereço de internet de quem abre o app.</p>
-          <p>Você pode baixar tudo em "Baixar todos os dados" e apagar tudo em "Excluir minha conta".</p>
+        <details class="group">
+          <summary><span class="group-title">Orçamento mensal</span><span class="group-hint">Limite por categoria</span></summary>
+          <div class="group-body">
+            <p class="account-note">Defina quanto pretende gastar por categoria. O Resumo avisa a partir de 80%.</p>
+            <ul id="budget-edit-list" class="rec-list"></ul>
+            <p id="budget-empty" class="empty" hidden>Nenhum limite definido ainda.</p>
+            <button id="budget-add" class="btn" type="button">Definir limite</button>
+          </div>
         </details>
 
-        <h3 class="section-title">Conta</h3>
-        <p id="account-email" class="account-email"></p>
-        <p class="account-note">Excluir a conta apaga também todos os seus lançamentos e categorias.</p>
-        <button id="delete-open" class="btn danger" type="button">Excluir minha conta</button>
+        <details class="group">
+          <summary><span class="group-title">Metas</span><span class="group-hint">Guardar para um objetivo</span></summary>
+          <div class="group-body">
+            <p class="account-note">Guarde dinheiro para um objetivo e acompanhe o progresso.</p>
+            <ul id="goals-list" class="goal-list"></ul>
+            <p id="goals-empty" class="empty" hidden>Nenhuma meta ainda.</p>
+            <button id="goal-add" class="btn" type="button">Nova meta</button>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary><span class="group-title">Contas a pagar</span><span class="group-hint">Vencimentos</span></summary>
+          <div class="group-body">
+            <p class="account-note">Cadastre contas com vencimento. As que vencem em até 7 dias aparecem no Resumo.</p>
+            <ul id="bills-list" class="rec-list"></ul>
+            <p id="bills-empty" class="empty" hidden>Nenhuma conta pendente.</p>
+            <button id="bill-add" class="btn" type="button">Nova conta</button>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary><span class="group-title">Lançamentos fixos</span><span class="group-hint">Aluguel, assinaturas, salário</span></summary>
+          <div class="group-body">
+            <p class="account-note">Entram sozinhos todo mês.</p>
+            <ul id="recurring-list" class="rec-list"></ul>
+            <p id="recurring-empty" class="empty" hidden>Nenhum lançamento fixo ainda.</p>
+            <div id="recurring-suggestions" hidden>
+              <h4 class="subsection">Parecem se repetir todo mês</h4>
+              <ul id="suggestion-list" class="cat-list"></ul>
+            </div>
+            <button id="recurring-add" class="btn" type="button">Novo lançamento fixo</button>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary><span class="group-title">Categorias</span><span class="group-hint">Despesas e receitas</span></summary>
+          <div class="group-body">
+            <form id="cat-form" class="cat-form" novalidate>
+              <label for="cat-name" class="sr-only">Nome da categoria</label>
+              <input id="cat-name" type="text" placeholder="Nova categoria" maxlength="40" required>
+              <label for="cat-type" class="sr-only">Tipo</label>
+              <select id="cat-type">
+                <option value="expense">Despesa</option>
+                <option value="income">Receita</option>
+              </select>
+              <button class="btn primary" type="submit">Adicionar</button>
+            </form>
+            <h4 class="subsection">Despesas</h4>
+            <ul id="cats-expense" class="cat-list"></ul>
+            <h4 class="subsection">Receitas</h4>
+            <ul id="cats-income" class="cat-list"></ul>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary><span class="group-title">Importar e exportar</span><span class="group-hint">Extrato, CSV e cópia dos dados</span></summary>
+          <div class="group-body">
+            <p class="account-note">Traga lançamentos de um extrato do seu banco, em OFX ou CSV.</p>
+            <button id="import-open" class="btn" type="button">Importar extrato</button>
+            <p class="account-note spaced">Baixe seus lançamentos em CSV, para abrir no Excel ou no Planilhas.</p>
+            <div class="btn-row">
+              <button id="export-month" class="btn" type="button">Exportar mês</button>
+              <button id="export-all" class="btn" type="button">Exportar tudo</button>
+            </div>
+            <p class="account-note spaced">Baixe uma cópia de tudo que está guardado na sua conta, em JSON.</p>
+            <button id="backup-download" class="btn" type="button">Baixar todos os dados</button>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary><span class="group-title">Segurança</span><span class="group-hint">Verificação em duas etapas</span></summary>
+          <div class="group-body">
+            <p id="mfa-status" class="account-note"></p>
+            <button id="mfa-enable" class="btn" type="button" hidden>Ativar verificação em duas etapas</button>
+            <button id="mfa-disable" class="btn danger" type="button" hidden>Desativar verificação em duas etapas</button>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary><span class="group-title">Privacidade</span><span class="group-hint">O que fica guardado</span></summary>
+          <div class="group-body prose">
+            <p>Seu e-mail e sua senha (a senha é guardada embaralhada pelo Supabase, nunca em texto) e o que você cadastra no app: lançamentos, categorias, lançamentos fixos, orçamento, contas a pagar e metas.</p>
+            <p>Os dados ficam no Supabase, nos Estados Unidos, e cada conta só enxerga as próprias linhas. O app não tem anúncios nem rastreadores, e não vende nem compartilha dados.</p>
+            <p>Extratos que você importa são lidos no seu aparelho. Só os lançamentos que você confirmar são salvos; o arquivo em si não é enviado.</p>
+            <p>A biblioteca de acesso ao Supabase é carregada do jsDelivr, que vê o endereço de internet de quem abre o app.</p>
+            <p>Você pode baixar tudo em "Importar e exportar" e apagar tudo em "Excluir conta".</p>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary><span class="group-title">Excluir conta</span><span class="group-hint">Apaga todos os dados</span></summary>
+          <div class="group-body">
+            <p class="account-note">Excluir a conta apaga também todos os seus lançamentos e categorias.</p>
+            <button id="delete-open" class="btn danger" type="button">Excluir minha conta</button>
+          </div>
+        </details>
       </section>
     </main>
 
     <nav class="tabbar" aria-label="Principal">
-      <button class="tab" type="button" data-tab="summary" aria-current="page">Resumo</button>
-      <button class="tab" type="button" data-tab="list">Lançamentos</button>
-      <button class="tab" type="button" data-tab="categories">Ajustes</button>
+      <button class="tab" type="button" data-tab="summary" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V12M12 20V5M19 20v-5"/></svg>
+        <span>Resumo</span>
+      </button>
+      <button class="tab" type="button" data-tab="list">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5h10M9 12h10M9 17.5h10"/><path d="M4.8 6.5h.01M4.8 12h.01M4.8 17.5h.01"/></svg>
+        <span>Lançamentos</span>
+      </button>
+      <button class="tab" type="button" data-tab="categories">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
+        <span>Ajustes</span>
+      </button>
     </nav>
-    <button id="fab" class="fab" type="button" aria-label="Novo lançamento">+</button>
+    <button id="fab" class="fab" type="button" aria-label="Novo lançamento">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
   </div>
 
   <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">

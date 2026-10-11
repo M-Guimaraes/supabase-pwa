@@ -9,6 +9,7 @@ App de controle financeiro (PWA) feito com HTML, CSS e JavaScript puros. Os arqu
 - Categorias próprias (já vem com algumas padrão)
 - Importação de extrato bancário em OFX ou CSV, com prévia e sem duplicar lançamentos (Ajustes → Importar extrato)
 - Menos digitação: categoria sugerida pela descrição, descrições recentes ao digitar, botão "Repetir o último" e atalhos "Nova despesa" e "Nova receita" na tela inicial do celular (os atalhos dependem do sistema: funcionam no Android ao segurar o ícone)
+- Visual de extrato bancário: valores em Plex Serif, texto em Instrument Sans (fontes OFL em `fonts/`, com as licenças), linhas finas no lugar de cartões, padrão de cédula no saldo e na entrada, Ajustes em seções, primeiros passos para contas novas, tema claro e escuro
 - Segurança: verificação em duas etapas opcional (app autenticador), cópia de todos os dados em JSON, texto de privacidade e política de conteúdo (CSP) na página
 - Exportação de lançamentos em CSV, do mês ou de tudo (Ajustes → Dados)
 - Metas com valor, quanto já foi guardado, prazo e quanto guardar por mês (Ajustes → Metas)

@@ -15,6 +15,10 @@ problems = []
 def check(cond, msg):
     print(('OK   ' if cond else 'FAIL ') + msg)
     if not cond: problems.append(msg)
+def go_settings(page):
+    page.click('[data-tab=categories]')
+    page.evaluate("document.querySelectorAll('details.group').forEach(d => d.open = true)")
+
 with sync_playwright() as p:
     b = p.chromium.launch()
     ctx = b.new_context(viewport={'width': 390, 'height': 800}, accept_downloads=True, service_workers='block')
@@ -26,10 +30,13 @@ with sync_playwright() as p:
     page.wait_for_selector('#app:not([hidden])')
     page.wait_for_timeout(500)
     today = datetime.date.today()
+    check(page.is_visible('#onboarding'), 'primeiros passos aparecem para conta vazia')
+    page.click('#onb-first'); page.wait_for_selector('#sheet[open]'); page.click('#tx-cancel')
     # transação
     page.click('#fab'); page.fill('#tx-amount', '80,00'); page.select_option('#tx-category', 'cat-mercado'); page.fill('#tx-desc', 'Mercado Central'); page.click('#tx-save')
     page.wait_for_timeout(500)
     check(len(page.evaluate('__db.transactions')) == 1, 'lançamento salvo')
+    check(page.is_hidden('#onboarding'), 'primeiros passos somem depois do primeiro lançamento')
     page.click('#fab')
     check(page.is_visible('#tx-repeat'), 'botão repetir visível: ' + page.inner_text('#tx-repeat'))
     page.fill('#tx-desc', 'Mercado Central 77')
@@ -38,14 +45,14 @@ with sync_playwright() as p:
     page.click('#tx-repeat'); page.click('#tx-save'); page.wait_for_timeout(400)
     check(len(page.evaluate('__db.transactions')) == 2, 'repetir último salvou')
     # orçamento
-    page.click('[data-tab=categories]')
+    go_settings(page)
     page.click('#budget-add'); page.fill('#bud-amount', '100'); page.click('#bud-save'); page.wait_for_timeout(400)
     page.click('[data-tab=summary]')
     check('Orçamento do mês' in page.inner_text('#budget-progress'), 'orçamento no resumo')
     print('   ', page.inner_text('#budget-list').replace('\n', ' | '))
     check(page.locator('#budget-list li.over').count() == 1, '160 de 100 = estourou')
     # conta
-    page.click('[data-tab=categories]')
+    go_settings(page)
     page.click('#bill-add'); page.fill('#bill-amount', '150'); page.fill('#bill-desc', 'Luz'); page.click('#bill-save'); page.wait_for_timeout(400)
     page.click('[data-tab=summary]')
     check('vence hoje' in page.inner_text('#bills-due'), 'conta vence hoje no resumo')
@@ -53,7 +60,7 @@ with sync_playwright() as p:
     check(page.locator('#bills-due').is_hidden(), 'conta paga saiu da lista')
     check(len(page.evaluate('__db.transactions')) == 3, 'pagamento virou despesa')
     # recorrência
-    page.click('[data-tab=categories]')
+    go_settings(page)
     page.click('#recurring-add'); page.fill('#rec-amount', '1200'); page.fill('#rec-desc', 'Aluguel'); page.fill('#rec-day', '1'); page.click('#rec-save'); page.wait_for_timeout(700)
     txs = page.evaluate('__db.transactions')
     check(any(t.get('external_id','').startswith('rec:') for t in txs), 'recorrência gerou lançamento')

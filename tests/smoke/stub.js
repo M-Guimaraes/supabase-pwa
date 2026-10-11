@@ -8,6 +8,7 @@
     ],
     transactions: [], recurring_transactions: [], budgets: [], bills: [], goals: [],
   };
+  if (window.__seed) Object.assign(db, window.__seed);
   window.__db = db;
   const cb = {};
   function builder(table) {
@@ -68,7 +69,7 @@
         from: builder,
         rpc: async () => ({ error: null }),
         auth: {
-          onAuthStateChange(fn) { setTimeout(() => fn('SIGNED_IN', { user: { id: 'u1', email: 't@x.com' } }), 0); },
+          onAuthStateChange(fn) { setTimeout(() => fn(window.__noSession ? 'SIGNED_OUT' : 'SIGNED_IN', window.__noSession ? null : { user: { id: 'u1', email: 'marcelo@exemplo.com' } }), 0); },
           signOut: async () => ({}),
           signUp: async () => ({ data: {}, error: null }),
           signInWithPassword: async () => ({ error: null }),

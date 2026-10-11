@@ -12,7 +12,7 @@ Estados possíveis: pendente, em andamento, concluído.
 | 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV e metas implementados, falta testar; offline e casais pendentes |
 | 2 | Menos digitação manual | 5 | implementado, falta testar no celular |
 | 5 | Segurança e controle dos dados | 6 | implementado no app; falta aplicar a migration das duas etapas e ligar a proteção de senhas vazadas |
-| 6 | Preço baixo e simplicidade | 7 | pendente |
+| 6 | Preço baixo e simplicidade | 7 | parcial: onboarding e telas enxutas feitos; falta conferir limites do plano e testar com pessoas |
 | 1B | Sincronização automática (Open Finance) | 8 | pendente |
 
 A numeração segue a ordem da pesquisa; a prioridade é a ordem sugerida de execução.
@@ -97,7 +97,7 @@ Pronto quando: os alertas de segurança não têm pendências evitáveis.
 
 ## 6. Preço baixo e simplicidade
 
-Status: pendente
+Status: parcial. Feito em 11/10/2026: primeiros passos no Resumo para contas sem dados (conta criada, conferir categorias, primeiro lançamento), Ajustes reorganizado em seções recolhíveis e novo visual de extrato bancário (identidade, fontes próprias, ícones, tema escuro). Falta: conferir os limites do plano gratuito do Supabase e testar com 3 pessoas reais.
 
 1. Manter o app gratuito e conferir os limites do plano gratuito do Supabase (armazenamento, usuários, pausa por inatividade).
 2. Onboarding de 3 passos no primeiro acesso: criar conta, conferir as categorias, registrar o primeiro lançamento.
