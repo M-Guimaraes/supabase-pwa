@@ -101,3 +101,33 @@ alter table public.transactions add column external_id text;
 
 create unique index transactions_user_external_id_key
   on public.transactions (user_id, external_id);
+
+-- Lançamentos fixos (aluguel, assinaturas, salário). O app gera os lançamentos de cada
+-- mês em transactions, com external_id "rec:<id>:<AAAA-MM>", então gerar duas vezes não duplica.
+create table public.recurring_transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  category_id uuid references public.categories (id) on delete set null,
+  type text not null check (type in ('income', 'expense')),
+  amount numeric(12, 2) not null check (amount > 0),
+  description text not null,
+  day_of_month smallint not null check (day_of_month between 1 and 31),
+  start_on date not null default date_trunc('month', current_date)::date,
+  generated_through date,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index recurring_transactions_user_id_idx on public.recurring_transactions (user_id);
+create index recurring_transactions_category_id_idx on public.recurring_transactions (category_id);
+
+alter table public.recurring_transactions enable row level security;
+
+create policy "recurring_select_own" on public.recurring_transactions
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "recurring_insert_own" on public.recurring_transactions
+  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "recurring_update_own" on public.recurring_transactions
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "recurring_delete_own" on public.recurring_transactions
+  for delete to authenticated using (user_id = (select auth.uid()));

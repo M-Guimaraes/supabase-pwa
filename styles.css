@@ -95,7 +95,7 @@ label {
 }
 
 input[type="text"], input[type="email"], input[type="password"],
-input[type="date"], select {
+input[type="date"], input[type="number"], input[type="month"], select {
   width: 100%;
   min-height: 48px;
   padding: 0.6rem 0.85rem;
@@ -296,6 +296,18 @@ main { padding: 0 1rem; }
 .account-note { margin: 0.25rem 0 1rem; color: var(--ink-soft); font-size: 0.92rem; }
 .btn.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ---------- Lançamentos fixos ---------- */
+
+.rec-list { margin-bottom: 0.6rem; }
+.rec-list .tx.paused { opacity: 0.55; }
+.subsection { margin: 1.25rem 0 0.6rem; font-size: 0.95rem; font-weight: 700; color: var(--ink-soft); }
+.suggest-text { flex: 1; min-width: 0; padding-right: 0.5rem; }
+.suggest-text .title { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.suggest-text .sub { display: block; font-size: 0.85rem; color: var(--ink-soft); }
+.cat-list .btn.small { flex: none; }
+.fixed-total { margin-top: 0.9rem; color: var(--ink-soft); font-size: 0.92rem; }
+#recurring-add { margin-top: 0.4rem; }
+
 /* ---------- Importar extrato ---------- */
 
 .import-summary { margin: 1rem 0 0.15rem; font-weight: 600; }
@@ -432,9 +444,11 @@ main { padding: 0 1rem; }
 .segmented input:checked + label { background: var(--surface); }
 #type-expense:checked + label { color: var(--neg); }
 #type-income:checked + label { color: var(--pos); }
+#rtype-expense:checked + label { color: var(--neg); }
+#rtype-income:checked + label { color: var(--pos); }
 .segmented input:focus-visible + label { outline: 3px solid var(--focus); outline-offset: 1px; }
 
-#tx-amount {
+#tx-amount, #rec-amount {
   width: 100%;
   min-height: 56px;
   padding: 0.6rem 0.85rem;

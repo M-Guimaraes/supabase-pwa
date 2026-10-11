@@ -7,7 +7,7 @@ Estados possíveis: pendente, em andamento, concluído.
 | # | Tópico | Prioridade | Status |
 |---|---|---|---|
 | 1A | Importar extrato (CSV e OFX) | 1 | implementado, falta testar no celular |
-| 4 | Gastos recorrentes e assinaturas | 2 | pendente |
+| 4 | Gastos recorrentes e assinaturas | 2 | implementado, falta testar no celular |
 | 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | pendente |
 | 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | pendente |
 | 2 | Menos digitação manual | 5 | pendente |
@@ -19,13 +19,15 @@ A numeração segue a ordem da pesquisa; a prioridade é a ordem sugerida de exe
 
 ## 4. Gastos recorrentes e assinaturas
 
-Status: pendente
+Status: implementado em 11/10/2026, falta testar no celular.
 
 1. Criar a tabela `recurring_transactions` (tipo, valor, categoria, dia do mês, ativa, última geração) com RLS por usuário.
 2. Ao abrir o app, gerar de forma idempotente os lançamentos do mês que ainda não existem, para não duplicar.
 3. Tela para criar, pausar e excluir recorrências.
 4. Sugerir possíveis assinaturas quando houver lançamentos parecidos em meses seguidos.
 5. Mostrar o total mensal de assinaturas no Resumo.
+
+Feito: tabela `recurring_transactions` com RLS; geração ao abrir o app (uma vez por dia), com `external_id` `rec:<id>:<mês>` para não duplicar; dia 31 vira o último dia de meses curtos; preenchimento retroativo de até 24 meses; ao retomar uma recorrência pausada, os meses parados não são preenchidos; tela em Ajustes para criar, editar, pausar e excluir; sugestões a partir de lançamentos iguais em dois meses seguidos; total de despesas fixas no Resumo. Testes automáticos em `tests/recurring.test.js`.
 
 A avaliar: gerar por rotina agendada no Supabase (`pg_cron`) em vez de no app.
 

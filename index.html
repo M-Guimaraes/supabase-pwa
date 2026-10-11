@@ -62,6 +62,7 @@
               <dd id="total-expense" class="neg">R$ 0,00</dd>
             </div>
           </dl>
+          <p id="fixed-total" class="fixed-total" hidden></p>
         </div>
 
         <h3 class="section-title">Para onde foi o dinheiro</h3>
@@ -89,6 +90,16 @@
         <ul id="cats-expense" class="cat-list"></ul>
         <h3 class="section-title">Receitas</h3>
         <ul id="cats-income" class="cat-list"></ul>
+
+        <h3 class="section-title">Lançamentos fixos</h3>
+        <p class="account-note">Aluguel, assinaturas e salário entram sozinhos todo mês.</p>
+        <ul id="recurring-list" class="rec-list"></ul>
+        <p id="recurring-empty" class="empty" hidden>Nenhum lançamento fixo ainda.</p>
+        <div id="recurring-suggestions" hidden>
+          <h4 class="subsection">Parecem se repetir todo mês</h4>
+          <ul id="suggestion-list" class="cat-list"></ul>
+        </div>
+        <button id="recurring-add" class="btn" type="button">Novo lançamento fixo</button>
 
         <h3 class="section-title">Dados</h3>
         <p class="account-note">Traga lançamentos de um extrato do seu banco, em OFX ou CSV.</p>
@@ -138,6 +149,47 @@
         <button id="tx-delete" class="btn danger" type="button" hidden>Excluir</button>
         <button id="tx-cancel" class="btn" type="button">Cancelar</button>
         <button id="tx-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="recurring-sheet" class="sheet" aria-labelledby="recurring-title">
+    <form id="recurring-form" method="dialog" novalidate>
+      <h3 id="recurring-title">Novo lançamento fixo</h3>
+
+      <div class="segmented" role="radiogroup" aria-label="Tipo">
+        <input type="radio" name="rtype" id="rtype-expense" value="expense" checked>
+        <label for="rtype-expense">Despesa</label>
+        <input type="radio" name="rtype" id="rtype-income" value="income">
+        <label for="rtype-income">Receita</label>
+      </div>
+
+      <label for="rec-amount">Valor</label>
+      <input id="rec-amount" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+
+      <label for="rec-desc">Descrição</label>
+      <input id="rec-desc" type="text" maxlength="80" placeholder="Ex.: Aluguel" autocomplete="off" required>
+
+      <label for="rec-category">Categoria</label>
+      <select id="rec-category"></select>
+
+      <label for="rec-day">Dia do mês</label>
+      <input id="rec-day" type="number" inputmode="numeric" min="1" max="31" required>
+
+      <label for="rec-start">Começa em</label>
+      <input id="rec-start" type="month" required>
+
+      <label id="rec-active-row" class="check" hidden>
+        <input type="checkbox" id="rec-active" checked> Ativo (desmarque para pausar)
+      </label>
+      <p id="rec-note" class="account-note" hidden>Mudanças valem para os próximos meses. Lançamentos já criados não mudam.</p>
+
+      <p id="rec-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="rec-delete" class="btn danger" type="button" hidden>Excluir</button>
+        <button id="rec-cancel" class="btn" type="button">Cancelar</button>
+        <button id="rec-save" class="btn primary" type="submit">Salvar</button>
       </div>
     </form>
   </dialog>
@@ -215,6 +267,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="importer.js"></script>
+  <script src="recurring.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -17,7 +17,11 @@
     month: firstOfMonth(new Date()),
     categories: [],
     transactions: [],
+    recurring: [],
+    suggestions: [],
+    lastGeneration: null,
     editing: null,
+    editingRecurring: null,
     signupMode: false,
   };
 
@@ -164,9 +168,100 @@
     state.transactions = data.map((t) => ({ ...t, amount: Number(t.amount) }));
   }
 
+  async function loadRecurring() {
+    const { data, error } = await sb
+      .from('recurring_transactions')
+      .select('id, type, amount, description, category_id, day_of_month, start_on, generated_through, active')
+      .order('created_at');
+    if (error) throw error;
+    state.recurring = data.map((r) => ({ ...r, amount: Number(r.amount) }));
+  }
+
+  // Cria os lançamentos fixos que já deveriam existir. Idempotente: o external_id
+  // "rec:<id>:<mês>" é único, então repetir não duplica. Roda uma vez por dia.
+  async function generateRecurring() {
+    const today = new Date();
+    const stamp = ymd(today);
+    if (state.lastGeneration === stamp) return 0;
+    let added = 0;
+    for (const r of state.recurring) {
+      if (!r.active) continue;
+      const due = Recurring.occurrencesDue(r, today);
+      if (due.length === 0) continue;
+      const rows = due.map((o) => ({
+        user_id: state.userId,
+        type: r.type,
+        amount: r.amount,
+        description: r.description,
+        category_id: r.category_id,
+        occurred_on: o.date,
+        external_id: o.externalId,
+      }));
+      for (let i = 0; i < rows.length; i += 100) {
+        const { data, error } = await sb
+          .from('transactions')
+          .upsert(rows.slice(i, i + 100), { onConflict: 'user_id,external_id', ignoreDuplicates: true })
+          .select('id');
+        if (error) throw error;
+        added += data.length;
+      }
+      const through = Recurring.generatedThrough(due);
+      const { error } = await sb.from('recurring_transactions').update({ generated_through: through }).eq('id', r.id);
+      if (error) throw error;
+      r.generated_through = through;
+    }
+    state.lastGeneration = stamp;
+    return added;
+  }
+
+  async function loadRecurringSuggestions() {
+    const now = new Date();
+    const since = ymd(new Date(now.getFullYear(), now.getMonth() - 5, 1));
+    const { data, error } = await sb
+      .from('transactions')
+      .select('type, amount, description, occurred_on, category_id, external_id')
+      .gte('occurred_on', since)
+      .not('description', 'is', null)
+      .limit(2000);
+    if (error) throw error;
+    state.suggestions = Recurring.suggestRecurring(
+      data.map((t) => ({ ...t, amount: Number(t.amount) })),
+      state.recurring,
+      now
+    );
+  }
+
   async function refresh() {
     try {
-      await Promise.all([loadCategories(), loadTransactions()]);
+      await Promise.all([loadCategories(), loadRecurring()]);
+    } catch (err) {
+      toast(friendlyError(err));
+      return;
+    }
+    try {
+      const added = await generateRecurring();
+      if (added > 0) toast(added === 1 ? '1 lançamento fixo adicionado' : `${added} lançamentos fixos adicionados`);
+    } catch (err) {
+      toast(friendlyError(err));
+    }
+    try {
+      await loadTransactions();
+    } catch (err) {
+      toast(friendlyError(err));
+      return;
+    }
+    try {
+      await loadRecurringSuggestions();
+    } catch (err) {
+      state.suggestions = [];
+    }
+    render();
+  }
+
+  // Só troca de mês: não recarrega categorias nem recorrências.
+  async function refreshMonth() {
+    try {
+      await loadTransactions();
       render();
     } catch (err) {
       toast(friendlyError(err));
@@ -185,6 +280,7 @@
     renderSummary();
     renderList();
     renderCategories();
+    renderRecurring();
   }
 
   function renderSummary() {
@@ -211,6 +307,14 @@
     const total = income + expense;
     $('split-income').style.width = total ? `${(income / total) * 100}%` : '0%';
     $('split-expense').style.width = total ? `${(expense / total) * 100}%` : '0%';
+
+    const fixed = Recurring.fixedExpenseTotal(state.recurring);
+    $('fixed-total').hidden = fixed.count === 0;
+    if (fixed.count > 0) {
+      $('fixed-total').textContent =
+        `Despesas fixas: ${brl.format(fixed.total)} por mês, em ${fixed.count} ` +
+        (fixed.count === 1 ? 'lançamento.' : 'lançamentos.');
+    }
 
     const list = $('breakdown');
     list.replaceChildren();
@@ -295,7 +399,7 @@
   function shiftMonth(delta) {
     state.month = new Date(state.month.getFullYear(), state.month.getMonth() + delta, 1);
     $('month-label').textContent = monthFmt.format(state.month);
-    refresh();
+    refreshMonth();
   }
   $('month-prev').addEventListener('click', () => shiftMonth(-1));
   $('month-next').addEventListener('click', () => shiftMonth(1));
@@ -441,6 +545,173 @@
     }
     sheet.close();
     toast('Lançamento excluído');
+    await refresh();
+  });
+
+  /* ---------- Lançamentos fixos ---------- */
+
+  const recSheet = $('recurring-sheet');
+
+  function monthLabel(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; }
+
+  function renderRecurring() {
+    const list = $('recurring-list');
+    list.replaceChildren();
+    $('recurring-empty').hidden = state.recurring.length > 0;
+
+    for (const r of state.recurring) {
+      const li = el('li');
+      const btn = el('button', `tx ${r.type}${r.active ? '' : ' paused'}`);
+      btn.type = 'button';
+      const info = el('span', 'info');
+      info.append(
+        el('span', 'title', r.description),
+        el('span', 'sub', `${categoryName(r.category_id)} · todo dia ${r.day_of_month}${r.active ? '' : ' · pausado'}`)
+      );
+      const sign = r.type === 'income' ? '+ ' : '− ';
+      btn.append(el('span', 'dot'), info, el('span', 'amount', sign + brl.format(r.amount)));
+      btn.addEventListener('click', () => openRecurringSheet(r));
+      li.append(btn);
+      list.append(li);
+    }
+
+    const box = $('recurring-suggestions');
+    const ul = $('suggestion-list');
+    ul.replaceChildren();
+    box.hidden = state.suggestions.length === 0;
+    for (const s of state.suggestions) {
+      const li = el('li');
+      const text = el('span', 'suggest-text');
+      text.append(
+        el('span', 'title', s.description),
+        el('span', 'sub', `${brl.format(s.amount)} · dia ${s.day} · visto em ${s.months} meses`)
+      );
+      const add = el('button', 'btn small', 'Adicionar');
+      add.type = 'button';
+      add.addEventListener('click', () => openRecurringSheet(null, s));
+      li.append(text, add);
+      ul.append(li);
+    }
+  }
+
+  function fillRecCategoryOptions(type, selected) {
+    const select = $('rec-category');
+    select.replaceChildren();
+    const none = el('option', '', 'Sem categoria');
+    none.value = '';
+    select.append(none);
+    for (const c of state.categories.filter((x) => x.type === type)) {
+      const opt = el('option', '', c.name);
+      opt.value = c.id;
+      select.append(opt);
+    }
+    select.value = selected && [...select.options].some((o) => o.value === selected) ? selected : '';
+  }
+
+  function currentRecType() {
+    return document.querySelector('input[name="rtype"]:checked').value;
+  }
+
+  document.querySelectorAll('input[name="rtype"]').forEach((r) =>
+    r.addEventListener('change', () => fillRecCategoryOptions(currentRecType(), ''))
+  );
+
+  // rec = recorrência existente (editar); hint = sugestão para preencher uma nova.
+  function openRecurringSheet(rec, hint) {
+    state.editingRecurring = rec || null;
+    $('rec-error').hidden = true;
+    $('recurring-title').textContent = rec ? 'Editar lançamento fixo' : 'Novo lançamento fixo';
+    $('rec-delete').hidden = !rec;
+    $('rec-active-row').hidden = !rec;
+    $('rec-note').hidden = !rec;
+
+    const src = rec || hint || null;
+    const type = src ? src.type : 'expense';
+    $(`rtype-${type}`).checked = true;
+    $('rec-amount').value = src ? Number(src.amount).toFixed(2).replace('.', ',') : '';
+    $('rec-desc').value = src ? src.description || '' : '';
+    fillRecCategoryOptions(type, src ? src.category_id : '');
+    $('rec-day').value = rec ? rec.day_of_month : hint ? hint.day : new Date().getDate();
+
+    if (rec) {
+      $('rec-start').value = rec.start_on.slice(0, 7);
+      $('rec-active').checked = rec.active;
+    } else {
+      $('rec-start').value = hint ? Recurring.nextMonthLabel(hint.lastMonth) : monthLabel(new Date());
+    }
+    $('rec-start').disabled = !!rec;
+
+    recSheet.showModal();
+    if (!rec && !hint) $('rec-amount').focus();
+  }
+
+  $('recurring-add').addEventListener('click', () => openRecurringSheet(null));
+  $('rec-cancel').addEventListener('click', () => recSheet.close());
+  recSheet.addEventListener('click', (e) => {
+    const r = recSheet.getBoundingClientRect();
+    const outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    if (outside) recSheet.close();
+  });
+
+  $('recurring-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('rec-error');
+    errorBox.hidden = true;
+    const fail = (message) => { errorBox.textContent = message; errorBox.hidden = false; };
+
+    const amount = parseAmount($('rec-amount').value);
+    const description = $('rec-desc').value.trim();
+    const day = Number($('rec-day').value);
+    const start = $('rec-start').value;
+    if (!(amount > 0)) return fail('Informe um valor maior que zero.');
+    if (!description) return fail('Digite uma descrição, por exemplo "Aluguel".');
+    if (!Number.isInteger(day) || day < 1 || day > 31) return fail('O dia do mês precisa ser de 1 a 31.');
+    if (!/^\d{4}-\d{2}$/.test(start)) return fail('Escolha o mês em que começa.');
+
+    const payload = {
+      type: currentRecType(),
+      amount,
+      description,
+      category_id: $('rec-category').value || null,
+      day_of_month: day,
+    };
+
+    const editing = state.editingRecurring;
+    if (editing) {
+      payload.active = $('rec-active').checked;
+      // Ao retomar, não preenche os meses em que ficou pausada.
+      if (!editing.active && payload.active) payload.generated_through = Recurring.resumeMarker(new Date());
+    } else {
+      payload.start_on = `${start}-01`;
+    }
+
+    const save = $('rec-save');
+    save.disabled = true;
+    const query = editing
+      ? sb.from('recurring_transactions').update(payload).eq('id', editing.id)
+      : sb.from('recurring_transactions').insert(payload);
+    const { error } = await query;
+    save.disabled = false;
+    if (error) return fail(friendlyError(error));
+
+    recSheet.close();
+    toast('Lançamento fixo salvo');
+    state.lastGeneration = null;
+    await refresh();
+  });
+
+  $('rec-delete').addEventListener('click', async () => {
+    const rec = state.editingRecurring;
+    if (!rec) return;
+    if (!confirm(`Excluir "${rec.description}"? Os lançamentos já criados continuam.`)) return;
+    const { error } = await sb.from('recurring_transactions').delete().eq('id', rec.id);
+    if (error) {
+      $('rec-error').textContent = friendlyError(error);
+      $('rec-error').hidden = false;
+      return;
+    }
+    recSheet.close();
+    toast('Lançamento fixo excluído');
     await refresh();
   });
 
@@ -871,11 +1142,14 @@
       showApp();
       switchTab('summary');
       state.month = firstOfMonth(new Date());
+      state.lastGeneration = null;
       // adiado: não chamar o Supabase de dentro do callback de autenticação
       setTimeout(refresh, 0);
     } else {
       state.categories = [];
       state.transactions = [];
+      state.recurring = [];
+      state.suggestions = [];
       showAuth();
     }
   });
