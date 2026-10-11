@@ -7,6 +7,7 @@ App de controle financeiro (PWA) feito com HTML, CSS e JavaScript puros. Os arqu
 - Login com e-mail e senha
 - Receitas e despesas por mês, com saldo e divisão por categoria
 - Categorias próprias (já vem com algumas padrão)
+- Importação de extrato bancário em OFX ou CSV, com prévia e sem duplicar lançamentos (Ajustes → Importar extrato)
 - Exclusão da própria conta, com todos os dados, em Ajustes
 - Instalável na tela inicial do celular e abre offline (os dados precisam de internet)
 
@@ -27,5 +28,6 @@ O esquema do banco está em `supabase/schema.sql`. A chave usada em `app.js` é 
 ## Arquivos
 
 - `index.html`, `styles.css`, `app.js`: o app
+- `importer.js`: leitor de extratos OFX e CSV (testes em `tests/`, rodar com `node --test`)
 - `manifest.webmanifest`, `sw.js`, `icons/`: instalação e uso offline
 - `supabase/schema.sql`: tabelas, regras de segurança e categorias padrão

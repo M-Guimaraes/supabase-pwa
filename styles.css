@@ -296,6 +296,63 @@ main { padding: 0 1rem; }
 .account-note { margin: 0.25rem 0 1rem; color: var(--ink-soft); font-size: 0.92rem; }
 .btn.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ---------- Importar extrato ---------- */
+
+.import-summary { margin: 1rem 0 0.15rem; font-weight: 600; }
+.import-totals { margin-bottom: 0.5rem; color: var(--ink-soft); font-size: 0.9rem; }
+.mapping {
+  margin: 0.5rem 0;
+  padding: 0 0.75rem 0.75rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+.mapping summary {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.4rem 0;
+  min-height: 44px;
+  font-weight: 500;
+}
+.check input { flex: none; width: 22px; height: 22px; }
+.import-list { margin-top: 0.5rem; }
+.import-row {
+  margin-bottom: 0.4rem;
+  padding: 0.4rem 0.75rem 0.6rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+.import-row.dup { opacity: 0.55; }
+.import-main {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0;
+  min-height: 52px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.import-main input { flex: none; width: 22px; height: 22px; }
+.import-text { flex: 1; min-width: 0; }
+.import-text .title { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.import-text .sub { display: block; font-size: 0.85rem; color: var(--ink-soft); }
+.import-main .amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.import-row.income .amount { color: var(--pos); }
+.import-row select { min-height: 44px; margin-top: 0.15rem; }
+#import-form .sheet-actions {
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.75rem;
+  background: var(--bg);
+}
+
 /* ---------- Navegação ---------- */
 
 .tabbar {

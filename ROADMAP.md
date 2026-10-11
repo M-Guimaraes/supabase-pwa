@@ -6,7 +6,7 @@ Estados possíveis: pendente, em andamento, concluído.
 
 | # | Tópico | Prioridade | Status |
 |---|---|---|---|
-| 1A | Importar extrato (CSV e OFX) | 1 | pendente |
+| 1A | Importar extrato (CSV e OFX) | 1 | implementado, falta testar no celular |
 | 4 | Gastos recorrentes e assinaturas | 2 | pendente |
 | 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | pendente |
 | 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | pendente |
@@ -94,7 +94,7 @@ Pronto quando: uma pessoa nova registra o primeiro lançamento sem ajuda.
 
 ## 1A. Importar extrato (CSV e OFX)
 
-Status: pendente. Decidido em 11/10/2026 como primeira entrega, no lugar da sincronização automática, porque não tem custo e serve a todos os usuários.
+Status: implementado em 11/10/2026, falta testar no celular com extratos reais. Decidido em 11/10/2026 como primeira entrega, no lugar da sincronização automática, porque não tem custo e serve a todos os usuários.
 
 1. **Entrada:** em Ajustes, botão "Importar extrato" que abre o seletor de arquivo. O arquivo é lido no próprio navegador e não é enviado a nenhum servidor; só os lançamentos que o usuário confirmar vão para o banco.
 2. **Leitor de OFX:** aceitar OFX 1.x (formato SGML) e 2.x (XML). Ler data, valor, descrição e o identificador único de cada lançamento (`FITID`). O tipo (receita ou despesa) vem do sinal do valor.
@@ -106,6 +106,10 @@ Status: pendente. Decidido em 11/10/2026 como primeira entrega, no lugar da sinc
 8. **Testes** com arquivos de exemplo fictícios: OFX 1.x, OFX 2.x, CSV com `;` e vírgula decimal, CSV em Latin-1 e arquivo malformado.
 
 Para ajustar o leitor a dados reais, pedir um arquivo de exemplo do banco do usuário, com os valores trocados por fictícios.
+
+Feito: leitores de OFX 1.x/2.x e CSV (testes automáticos em `tests/`, 11 casos), coluna `external_id` com índice único, prévia com duplicados, categoria sugerida, inverter sinais para faturas de cartão e importação em lotes de 100. Formato do C6 Bank testado com um extrato real, só no leitor.
+
+Falta: testar a tela no celular com extratos reais de outros bancos e de cartão.
 
 Pronto quando: importar um extrato real sem duplicar lançamentos, mesmo importando o mesmo arquivo duas vezes.
 

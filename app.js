@@ -444,6 +444,384 @@
     await refresh();
   });
 
+  /* ---------- Importar extrato ---------- */
+
+  const MAX_IMPORT = 1500;
+  const importSheet = $('import-sheet');
+  const imp = {
+    parsed: null,
+    items: [],
+    existing: new Set(),
+    similar: new Set(),
+    suggestions: null,
+    selected: new Set(),
+    category: new Map(),
+    invert: false,
+    token: 0,
+  };
+
+  function fmtDate(d) { return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`; }
+
+  function showImportError(message) {
+    $('import-error').textContent = message;
+    $('import-error').hidden = false;
+  }
+
+  function resetImportReview() {
+    $('import-review').hidden = true;
+    $('import-submit').disabled = true;
+    $('import-submit').textContent = 'Importar';
+  }
+
+  function fillSelect(select, headers, value, optional) {
+    select.replaceChildren();
+    const none = el('option', '', optional ? 'Nenhuma' : 'Escolha…');
+    none.value = '-1';
+    select.append(none);
+    headers.forEach((h, i) => {
+      const o = el('option', '', h || `Coluna ${i + 1}`);
+      o.value = String(i);
+      select.append(o);
+    });
+    select.value = String(value);
+  }
+
+  function toggleAmountMode() {
+    const split = $('map-mode').value === 'split';
+    $('map-single').hidden = split;
+    $('map-split').hidden = !split;
+  }
+
+  function setupMapping(parsed) {
+    const { headers } = parsed.analysis;
+    const m = parsed.mapping;
+    fillSelect($('map-date'), headers, m.date, false);
+    fillSelect($('map-desc1'), headers, m.desc.length > 0 ? m.desc[0] : -1, false);
+    fillSelect($('map-desc2'), headers, m.desc.length > 1 ? m.desc[1] : -1, true);
+    $('map-mode').value = m.amount.mode;
+    fillSelect($('map-amount'), headers, m.amount.column, false);
+    fillSelect($('map-credit'), headers, m.amount.credit, false);
+    fillSelect($('map-debit'), headers, m.amount.debit, false);
+    toggleAmountMode();
+    $('import-mapping').hidden = false;
+    $('import-mapping').open = !Importer.mappingIsComplete(m);
+  }
+
+  function readMapping() {
+    const num = (id) => Number($(id).value);
+    const mode = $('map-mode').value;
+    return {
+      date: num('map-date'),
+      desc: [num('map-desc1'), num('map-desc2')].filter((i) => i >= 0),
+      amount: mode === 'split'
+        ? { mode, column: -1, credit: num('map-credit'), debit: num('map-debit') }
+        : { mode, column: num('map-amount'), credit: -1, debit: -1 },
+    };
+  }
+
+  async function findExistingIds(items) {
+    const ids = items.map((i) => i.externalId);
+    const found = new Set();
+    for (let i = 0; i < ids.length; i += 80) {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('external_id')
+        .in('external_id', ids.slice(i, i + 80));
+      if (error) throw error;
+      data.forEach((r) => found.add(r.external_id));
+    }
+    return found;
+  }
+
+  // Lançamentos digitados à mão com mesma data, valor e tipo: provável repetição.
+  async function findSimilar(items) {
+    const dates = items.map((i) => i.date).sort();
+    const { data, error } = await sb
+      .from('transactions')
+      .select('occurred_on, amount, type')
+      .is('external_id', null)
+      .gte('occurred_on', dates[0])
+      .lte('occurred_on', dates[dates.length - 1])
+      .limit(1000);
+    if (error) throw error;
+    return new Set(data.map((r) => `${r.occurred_on}|${Number(r.amount).toFixed(2)}|${r.type}`));
+  }
+
+  async function loadSuggestions() {
+    if (imp.suggestions) return imp.suggestions;
+    const { data, error } = await sb
+      .from('transactions')
+      .select('description, category_id, type')
+      .not('category_id', 'is', null)
+      .not('description', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    if (error) throw error;
+    const map = new Map();
+    for (const r of data) {
+      const key = Importer.descriptionKey(r.description);
+      if (key && !map.has(`${r.type}|${key}`)) map.set(`${r.type}|${key}`, r.category_id);
+    }
+    imp.suggestions = map;
+    return map;
+  }
+
+  function isSimilar(item) {
+    const v = Importer.view(item, imp.invert);
+    return imp.similar.has(`${item.date}|${v.amount.toFixed(2)}|${v.type}`);
+  }
+
+  // Marca os novos (menos os parecidos com lançamentos manuais) e sugere categorias.
+  function resetSelection() {
+    imp.selected = new Set();
+    imp.category = new Map();
+    imp.items.forEach((item, i) => {
+      const dup = imp.existing.has(item.externalId);
+      if (!dup && !isSimilar(item)) imp.selected.add(i);
+      const v = Importer.view(item, imp.invert);
+      const hint = imp.suggestions && imp.suggestions.get(`${v.type}|${Importer.descriptionKey(item.description)}`);
+      const valid = hint && state.categories.some((c) => c.id === hint && c.type === v.type);
+      imp.category.set(i, valid ? hint : '');
+    });
+  }
+
+  function updateImportSummary() {
+    const total = imp.items.length;
+    const dups = imp.items.filter((it) => imp.existing.has(it.externalId)).length;
+    $('import-summary').textContent =
+      `${total} lançamentos no arquivo, ${total - dups} novos` + (dups ? ` e ${dups} já importados.` : '.');
+
+    let income = 0;
+    let expense = 0;
+    for (const i of imp.selected) {
+      const v = Importer.view(imp.items[i], imp.invert);
+      if (v.type === 'income') income += v.amount; else expense += v.amount;
+    }
+    $('import-totals').textContent =
+      `Selecionados: ${imp.selected.size}. Receitas ${brl.format(income)}, despesas ${brl.format(expense)}.`;
+
+    const n = imp.selected.size;
+    $('import-submit').disabled = n === 0;
+    $('import-submit').textContent = n ? `Importar ${n}` : 'Importar';
+    $('import-all').checked = n > 0 && n === total - dups;
+  }
+
+  function renderImport() {
+    const list = $('import-list');
+    list.replaceChildren();
+
+    imp.items.forEach((item, i) => {
+      const v = Importer.view(item, imp.invert);
+      const dup = imp.existing.has(item.externalId);
+      const similar = !dup && isSimilar(item);
+
+      const li = el('li', `import-row ${v.type}${dup ? ' dup' : ''}`);
+      const label = el('label', 'import-main');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = imp.selected.has(i);
+      box.disabled = dup;
+      box.addEventListener('change', () => {
+        if (box.checked) imp.selected.add(i); else imp.selected.delete(i);
+        updateImportSummary();
+      });
+
+      const text = el('span', 'import-text');
+      const note = dup ? 'Já importado' : similar ? 'Parecido com um lançamento seu' : '';
+      text.append(
+        el('span', 'title', item.description || 'Sem descrição'),
+        el('span', 'sub', [fmtDate(item.date), note].filter(Boolean).join(' · '))
+      );
+      const sign = v.type === 'income' ? '+ ' : '− ';
+      label.append(box, text, el('span', 'amount', sign + brl.format(v.amount)));
+      li.append(label);
+
+      if (!dup) {
+        const select = el('select');
+        select.setAttribute('aria-label', 'Categoria');
+        const none = el('option', '', 'Sem categoria');
+        none.value = '';
+        select.append(none);
+        for (const c of state.categories.filter((x) => x.type === v.type)) {
+          const o = el('option', '', c.name);
+          o.value = c.id;
+          select.append(o);
+        }
+        select.value = imp.category.get(i) || '';
+        select.addEventListener('change', () => imp.category.set(i, select.value));
+        li.append(select);
+      }
+      list.append(li);
+    });
+    updateImportSummary();
+  }
+
+  // Em CSV, mantém visível o ajuste de colunas para o usuário corrigir; sem prévia de lançamentos.
+  function showMappingOnly(message) {
+    showImportError(message);
+    resetImportReview();
+    $('import-summary').textContent = '';
+    $('import-totals').textContent = '';
+    $('import-list').replaceChildren();
+    if (imp.parsed.kind === 'csv') {
+      $('import-review').hidden = false;
+      $('import-mapping').open = true;
+    }
+  }
+
+  async function loadImportItems(token) {
+    $('import-error').hidden = true;
+    try {
+      let items;
+      if (imp.parsed.kind === 'ofx') {
+        items = imp.parsed.items;
+      } else {
+        const mapping = readMapping();
+        if (!Importer.mappingIsComplete(mapping)) {
+          showMappingOnly('Escolha as colunas de data e valor para continuar.');
+          return;
+        }
+        items = Importer.csvToItems(imp.parsed.analysis, mapping).items;
+      }
+
+      if (items.length === 0) {
+        showMappingOnly('Não encontrei lançamentos nesse arquivo. Confira as colunas escolhidas.');
+        return;
+      }
+      if (items.length > MAX_IMPORT) {
+        showMappingOnly(`O arquivo tem mais de ${MAX_IMPORT} lançamentos. Exporte um período menor no banco.`);
+        return;
+      }
+
+      await Importer.withIds(items);
+      const [existing, similar] = await Promise.all([findExistingIds(items), findSimilar(items), loadSuggestions()]);
+      if (token !== imp.token) return;
+
+      imp.items = items;
+      imp.existing = existing;
+      imp.similar = similar;
+      resetSelection();
+      renderImport();
+      $('import-review').hidden = false;
+    } catch (err) {
+      showImportError(friendlyError(err));
+      resetImportReview();
+    }
+  }
+
+  $('import-open').addEventListener('click', () => {
+    imp.parsed = null;
+    imp.items = [];
+    imp.suggestions = null;
+    imp.invert = false;
+    imp.token++;
+    $('import-file').value = '';
+    $('import-invert').checked = false;
+    $('import-error').hidden = true;
+    $('import-mapping').hidden = true;
+    resetImportReview();
+    importSheet.showModal();
+  });
+
+  $('import-cancel').addEventListener('click', () => importSheet.close());
+
+  $('import-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const token = ++imp.token;
+    $('import-error').hidden = true;
+    $('import-mapping').hidden = true;
+    resetImportReview();
+
+    if (file.size > 5 * 1024 * 1024) {
+      showImportError('Arquivo grande demais. O máximo é 5 MB.');
+      return;
+    }
+    try {
+      const parsed = Importer.parseStatement(await file.arrayBuffer());
+      if (!parsed) {
+        showImportError('Não reconheci esse arquivo. Use um extrato em OFX ou CSV exportado pelo banco.');
+        return;
+      }
+      imp.parsed = parsed;
+      if (parsed.kind === 'csv') setupMapping(parsed);
+      await loadImportItems(token);
+    } catch (err) {
+      showImportError(friendlyError(err));
+    }
+  });
+
+  ['map-date', 'map-desc1', 'map-desc2', 'map-amount', 'map-credit', 'map-debit'].forEach((id) =>
+    $(id).addEventListener('change', () => loadImportItems(++imp.token))
+  );
+  $('map-mode').addEventListener('change', () => {
+    toggleAmountMode();
+    loadImportItems(++imp.token);
+  });
+
+  $('import-invert').addEventListener('change', (e) => {
+    imp.invert = e.target.checked;
+    resetSelection();
+    renderImport();
+  });
+
+  $('import-all').addEventListener('change', (e) => {
+    imp.selected = new Set();
+    if (e.target.checked) {
+      imp.items.forEach((item, i) => { if (!imp.existing.has(item.externalId)) imp.selected.add(i); });
+    }
+    renderImport();
+  });
+
+  $('import-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const rows = [];
+    imp.items.forEach((item, i) => {
+      if (!imp.selected.has(i) || imp.existing.has(item.externalId)) return;
+      const v = Importer.view(item, imp.invert);
+      rows.push({
+        user_id: state.userId,
+        type: v.type,
+        amount: v.amount,
+        description: item.description || null,
+        category_id: imp.category.get(i) || null,
+        occurred_on: item.date,
+        external_id: item.externalId,
+      });
+    });
+    if (rows.length === 0) return;
+
+    const submit = $('import-submit');
+    submit.disabled = true;
+    $('import-error').hidden = true;
+    let inserted = 0;
+    try {
+      for (let i = 0; i < rows.length; i += 100) {
+        const { data, error } = await sb
+          .from('transactions')
+          .upsert(rows.slice(i, i + 100), { onConflict: 'user_id,external_id', ignoreDuplicates: true })
+          .select('id');
+        if (error) throw error;
+        inserted += data.length;
+        submit.textContent = `Importando ${Math.min(i + 100, rows.length)} de ${rows.length}`;
+      }
+    } catch (err) {
+      showImportError(
+        friendlyError(err) +
+          (inserted ? ` ${inserted} lançamentos já foram salvos; importar o arquivo de novo não duplica.` : '')
+      );
+      updateImportSummary();
+      return;
+    }
+
+    importSheet.close();
+    const latest = rows.map((r) => r.occurred_on).sort().pop();
+    state.month = firstOfMonth(parseYmd(latest));
+    const already = rows.length - inserted;
+    toast(`${inserted} lançamentos importados` + (already ? `, ${already} já existiam` : ''));
+    await refresh();
+  });
+
   /* ---------- Excluir conta ---------- */
 
   const deleteSheet = $('delete-sheet');

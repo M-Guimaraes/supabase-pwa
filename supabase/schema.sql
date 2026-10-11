@@ -93,3 +93,11 @@ $$;
 
 revoke all on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- Importação de extratos (OFX e CSV): identificador do lançamento no arquivo, para que
+-- importar o mesmo arquivo duas vezes não duplique nada. Lançamentos manuais ficam com
+-- external_id nulo (NULL é sempre distinto em índices únicos).
+alter table public.transactions add column external_id text;
+
+create unique index transactions_user_external_id_key
+  on public.transactions (user_id, external_id);

@@ -90,6 +90,10 @@
         <h3 class="section-title">Receitas</h3>
         <ul id="cats-income" class="cat-list"></ul>
 
+        <h3 class="section-title">Dados</h3>
+        <p class="account-note">Traga lançamentos de um extrato do seu banco, em OFX ou CSV.</p>
+        <button id="import-open" class="btn" type="button">Importar extrato</button>
+
         <h3 class="section-title">Conta</h3>
         <p id="account-email" class="account-email"></p>
         <p class="account-note">Excluir a conta apaga também todos os seus lançamentos e categorias.</p>
@@ -138,6 +142,58 @@
     </form>
   </dialog>
 
+  <dialog id="import-sheet" class="sheet" aria-labelledby="import-title">
+    <form id="import-form" method="dialog" novalidate>
+      <h3 id="import-title">Importar extrato</h3>
+      <p class="account-note">Escolha um arquivo OFX ou CSV exportado pelo seu banco. O arquivo é lido neste aparelho e só o que você confirmar é salvo.</p>
+
+      <label for="import-file">Arquivo</label>
+      <input id="import-file" type="file" accept=".ofx,.qfx,.csv,.txt,.xml,text/csv">
+
+      <p id="import-error" class="form-error" role="alert" hidden></p>
+
+      <div id="import-review" hidden>
+        <p id="import-summary" class="import-summary"></p>
+        <p id="import-totals" class="import-totals"></p>
+
+        <details id="import-mapping" class="mapping" hidden>
+          <summary>Ajustar colunas</summary>
+          <label for="map-date">Data</label>
+          <select id="map-date"></select>
+          <label for="map-desc1">Descrição</label>
+          <select id="map-desc1"></select>
+          <label for="map-desc2">Descrição extra (opcional)</label>
+          <select id="map-desc2"></select>
+          <label for="map-mode">Valores</label>
+          <select id="map-mode">
+            <option value="single">Uma coluna, com sinal</option>
+            <option value="split">Colunas de entrada e saída</option>
+          </select>
+          <div id="map-single">
+            <label for="map-amount">Coluna do valor</label>
+            <select id="map-amount"></select>
+          </div>
+          <div id="map-split" hidden>
+            <label for="map-credit">Coluna de entrada</label>
+            <select id="map-credit"></select>
+            <label for="map-debit">Coluna de saída</label>
+            <select id="map-debit"></select>
+          </div>
+        </details>
+
+        <label class="check"><input type="checkbox" id="import-invert"> Inverter sinais (use em faturas de cartão se receitas e despesas aparecerem trocadas)</label>
+        <label class="check"><input type="checkbox" id="import-all"> Selecionar todos os novos</label>
+
+        <ul id="import-list" class="import-list"></ul>
+      </div>
+
+      <div class="sheet-actions">
+        <button id="import-cancel" class="btn" type="button">Cancelar</button>
+        <button id="import-submit" class="btn primary" type="submit" disabled>Importar</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="delete-sheet" class="sheet" aria-labelledby="delete-title">
     <form id="delete-form" method="dialog" novalidate>
       <h3 id="delete-title">Excluir conta</h3>
@@ -158,6 +214,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="importer.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
