@@ -202,15 +202,8 @@ input:focus, select:focus { border-color: var(--focus); }
   background: var(--brand) url("icons/guilloche.svg") right center / cover no-repeat;
   color: var(--on-brand);
 }
-.auth-mark { display: block; margin-bottom: 1.25rem; }
-.brand {
-  font-family: var(--serif);
-  font-size: 2.75rem;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.auth-lead { margin-top: 0.6rem; color: var(--on-brand-soft); max-width: 22rem; }
+.auth-mark { display: block; }
+.auth-lead { margin-top: 0.9rem; color: var(--on-brand-soft); max-width: 22rem; }
 .auth-card {
   width: 100%;
   max-width: 440px;
@@ -221,6 +214,28 @@ input:focus, select:focus { border-color: var(--focus); }
 .auth-card .btn.primary { width: 100%; margin-top: 1.4rem; }
 .auth-card .btn.link { width: 100%; margin-top: 0.75rem; }
 .auth-foot { margin-top: 1.5rem; color: var(--ink-soft); font-size: 0.85rem; text-align: center; }
+/* Requisitos da senha no cadastro */
+.rules { margin-top: 0.75rem; display: grid; gap: 0.3rem; font-size: 0.875rem; color: var(--ink-soft); }
+.rules li { display: flex; align-items: center; gap: 0.55rem; }
+.rule-mark {
+  position: relative;
+  flex: none;
+  width: 16px; height: 16px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+}
+.rules li.ok { color: var(--ink); }
+.rules li.ok .rule-mark { background: var(--pos); border-color: var(--pos); }
+.rules li.ok .rule-mark::after {
+  content: "";
+  position: absolute;
+  left: 4.5px; top: 1.5px;
+  width: 4px; height: 8px;
+  border-right: 2px solid var(--surface);
+  border-bottom: 2px solid var(--surface);
+  transform: rotate(45deg);
+}
+.show-password { margin-top: 0.6rem; }
 #mfa-code, #mfa-enroll-code { font-family: var(--serif); font-size: 1.5rem; letter-spacing: 0.35em; text-align: center; }
 
 /* ---------- App ---------- */

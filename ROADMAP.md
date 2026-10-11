@@ -84,7 +84,7 @@ Feito: autenticação em dois fatores (TOTP) opcional em Ajustes → Segurança,
 
 Limite conhecido: sem acesso a cabeçalhos HTTP, `frame-ancestors` e HSTS dependem do GitHub Pages.
 
-1. Ligar a proteção contra senhas vazadas no Supabase Auth (verificar se o plano permite).
+1. Ligar a proteção contra senhas vazadas no Supabase Auth (verificar se o plano permite) e definir a política de senha também no servidor (Authentication → Sign In / Providers → Email: mínimo de 8 caracteres e exigir minúsculas, maiúsculas, números e símbolos). A validação do app é só conveniência: quem chama a API direto a contorna. Já feito no app: validação do cadastro.
 2. Autenticação em dois fatores (TOTP) opcional.
 3. Exportar todos os dados do usuário em CSV ou JSON.
 4. Texto curto de privacidade dentro do app, explicando o que é guardado.

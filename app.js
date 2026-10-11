@@ -80,7 +80,8 @@
     const msg = (error && error.message) || '';
     if (/invalid login credentials/i.test(msg)) return 'E-mail ou senha incorretos.';
     if (/already registered/i.test(msg)) return 'Já existe uma conta com esse e-mail. Tente entrar.';
-    if (/password should be at least/i.test(msg)) return 'A senha precisa ter pelo menos 6 caracteres.';
+    if (/known to be weak|pwned|leaked/i.test(msg)) return 'Essa senha apareceu em vazamentos de dados. Escolha outra.';
+    if (/password should (be at least|contain)/i.test(msg)) return 'A senha não atende às regras de segurança. Confira os requisitos abaixo do campo.';
     if (/email not confirmed/i.test(msg)) return 'Confirme seu e-mail pelo link que enviamos e tente de novo.';
     if (/invalid totp|mfa verification failed|invalid.*code/i.test(msg)) return 'Código incorreto. Confira o app e tente de novo.';
     if (/rate limit/i.test(msg)) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
@@ -117,10 +118,35 @@
     $('auth-submit').textContent = signup ? 'Criar conta' : 'Entrar';
     $('auth-toggle').textContent = signup ? 'Já tem conta? Entrar' : 'Não tem conta? Criar conta';
     $('auth-password').autocomplete = signup ? 'new-password' : 'current-password';
+    $('auth-confirm-row').hidden = !signup;
+    $('password-rules').hidden = !signup;
+    $('auth-confirm').value = '';
+    $('auth-confirm').required = signup;
     $('auth-error').hidden = true;
+    renderPasswordRules();
   }
 
+  // Requisitos da senha, atualizados a cada tecla (só no cadastro).
+  function renderPasswordRules() {
+    if (!state.signupMode) return;
+    const list = Password.rules($('auth-password').value, $('auth-confirm').value);
+    const ul = $('password-rules');
+    ul.replaceChildren();
+    for (const r of list) {
+      const li = el('li', r.ok ? 'ok' : '');
+      li.append(el('span', 'rule-mark'), el('span', '', r.label), el('span', 'sr-only', r.ok ? ' (atendido)' : ' (pendente)'));
+      ul.append(li);
+    }
+  }
+
+  $('auth-password').addEventListener('input', renderPasswordRules);
+  $('auth-confirm').addEventListener('input', renderPasswordRules);
   $('auth-toggle').addEventListener('click', () => setAuthMode(!state.signupMode));
+  $('auth-show').addEventListener('change', (e) => {
+    const type = e.target.checked ? 'text' : 'password';
+    $('auth-password').type = type;
+    $('auth-confirm').type = type;
+  });
 
   $('auth-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -129,10 +155,23 @@
     const errorBox = $('auth-error');
     errorBox.hidden = true;
 
-    if (!email || password.length < 6) {
-      errorBox.textContent = 'Informe um e-mail válido e uma senha com pelo menos 6 caracteres.';
+    const fail = (message, field) => {
+      errorBox.textContent = message;
       errorBox.hidden = false;
-      return;
+      if (field) $(field).focus();
+    };
+
+    if (!Password.isValidEmail(email)) return fail('Informe um e-mail válido.', 'auth-email');
+    if (!password) return fail('Digite sua senha.', 'auth-password');
+    if (state.signupMode) {
+      const list = Password.rules(password, $('auth-confirm').value);
+      const missing = list.filter((r) => !r.ok);
+      if (missing.some((r) => r.id === 'match') && missing.length === 1) {
+        return fail('As senhas não são iguais.', 'auth-confirm');
+      }
+      if (missing.length > 0) {
+        return fail('A senha ainda não atende a todos os requisitos listados.', 'auth-password');
+      }
     }
 
     const button = $('auth-submit');
@@ -149,6 +188,7 @@
         if (error) throw error;
         if (!data.session) {
           toast('Conta criada. Confirme seu e-mail pelo link que enviamos e depois entre.');
+          $('auth-password').value = '';
           setAuthMode(false);
         }
       } else {

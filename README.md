@@ -10,6 +10,7 @@ App de controle financeiro (PWA) feito com HTML, CSS e JavaScript puros. Os arqu
 - Importação de extrato bancário em OFX ou CSV, com prévia e sem duplicar lançamentos (Ajustes → Importar extrato)
 - Menos digitação: categoria sugerida pela descrição, descrições recentes ao digitar, botão "Repetir o último" e atalhos "Nova despesa" e "Nova receita" na tela inicial do celular (os atalhos dependem do sistema: funcionam no Android ao segurar o ícone)
 - Visual de extrato bancário: valores em Plex Serif, texto em Instrument Sans (fontes OFL em `fonts/`, com as licenças), linhas finas no lugar de cartões, padrão de cédula no saldo e na entrada, Ajustes em seções, primeiros passos para contas novas, tema claro e escuro
+- Cadastro com validação de senha (8 a 72 caracteres, minúscula, maiúscula, número, caractere especial e confirmação), requisitos ao vivo e "Mostrar senha"; o login continua aceitando senhas antigas
 - Segurança: verificação em duas etapas opcional (app autenticador), cópia de todos os dados em JSON, texto de privacidade e política de conteúdo (CSP) na página
 - Exportação de lançamentos em CSV, do mês ou de tudo (Ajustes → Dados)
 - Metas com valor, quanto já foi guardado, prazo e quanto guardar por mês (Ajustes → Metas)
@@ -38,6 +39,7 @@ O esquema do banco está em `supabase/schema.sql`. A chave usada em `app.js` é 
 - `index.html`, `styles.css`, `app.js`: o app
 - `importer.js`: leitor de extratos OFX e CSV (testes em `tests/`, rodar com `node --test`)
 - `tests/smoke/`: teste de fumaça no navegador com Supabase de mentira (`python3 tests/smoke/smoke.py`)
+- `password.js`: regras de senha e de e-mail do cadastro, testadas em `tests/`
 - `quick.js`: sugestões e atalhos para digitar menos, testados em `tests/`
 - `exporter.js`: CSV de exportação e cálculo das metas, testados em `tests/`
 - `budget.js`: regras de orçamento e contas a vencer, também testadas em `tests/`
