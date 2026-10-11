@@ -25,6 +25,7 @@
     hints: null,
     hasAnyTx: true,
     trendRows: [],
+    viewingCache: false,
     trendSel: null,
     pwFactorId: null,
     shortcut: Quick.parseShortcut(location.search),
@@ -45,6 +46,8 @@
     return;
   }
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  let store;
+  try { store = Offline.create(window.localStorage); } catch (err) { store = Offline.create({ getItem() { return null; }, setItem() { throw new Error('sem armazenamento'); }, removeItem() {} }); }
 
   /* ---------- Utilitários ---------- */
 
@@ -210,9 +213,15 @@
     }
   });
 
-  $('logout').addEventListener('click', async () => {
+  // Sair apaga a cópia local. Se há lançamentos que ainda não subiram, avisa antes.
+  async function leave() {
+    const pending = pendingList().length;
+    if (pending > 0 && !confirm(`Há ${pending} lançamento(s) que ainda não foram enviados e serão perdidos se você sair. Sair mesmo assim?`)) return;
+    store.clearAll();
     await sb.auth.signOut();
-  });
+  }
+
+  $('logout').addEventListener('click', leave);
 
   /* ---------- Segunda etapa (TOTP) ---------- */
 
@@ -266,9 +275,7 @@
     }
   });
 
-  $('mfa-logout').addEventListener('click', async () => {
-    await sb.auth.signOut();
-  });
+  $('mfa-logout').addEventListener('click', leave);
 
   /* ---------- Dados ---------- */
 
@@ -292,7 +299,8 @@
       .order('occurred_on', { ascending: false })
       .order('created_at', { ascending: false });
     if (error) throw error;
-    state.transactions = data.map((t) => ({ ...t, amount: Number(t.amount) }));
+    const rows = data.map((t) => ({ ...t, amount: Number(t.amount) }));
+    state.transactions = Offline.mergePending(rows, pendingList(), start, next);
   }
 
   async function loadBudgets() {
@@ -343,7 +351,7 @@
     for (let from = 0; from < 20000; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('type, amount, occurred_on')
+        .select('id, type, amount, description, category_id, occurred_on, created_at')
         .gte('occurred_on', since)
         .order('occurred_on')
         .order('id')
@@ -352,7 +360,7 @@
       rows.push(...data);
       if (data.length < 1000) break;
     }
-    state.trendRows = rows;
+    state.trendRows = rows.map((t) => ({ ...t, amount: Number(t.amount) }));
   }
 
   async function loadRecurring() {
@@ -418,10 +426,147 @@
     );
   }
 
+  /* ---------- Modo offline ---------- */
+
+  function pendingList() {
+    return state.userId ? store.queue(state.userId) : [];
+  }
+
+  function monthRange() {
+    return [ymd(state.month), ymd(new Date(state.month.getFullYear(), state.month.getMonth() + 1, 1))];
+  }
+
+  function localMonth() {
+    const [start, next] = monthRange();
+    return Offline.mergePending(state.trendRows, pendingList(), start, next);
+  }
+
+  function saveSnapshot() {
+    store.saveSnapshot(state.userId, {
+      email: $('account-email').textContent,
+      categories: state.categories,
+      recurring: state.recurring,
+      budgets: state.budgets,
+      bills: state.bills,
+      goals: state.goals,
+      trendRows: state.trendRows,
+      hasAnyTx: state.hasAnyTx,
+    });
+  }
+
+  // Sem internet: mostra a última cópia salva neste aparelho (só leitura, mais os lançamentos novos da fila).
+  function offlineRefresh() {
+    const snap = store.loadSnapshot(state.userId);
+    if (!snap) {
+      toast('Sem conexão e ainda não há dados salvos neste aparelho. Abra o app com internet uma vez.');
+      updateBanner();
+      return;
+    }
+    const d = snap.data;
+    state.categories = d.categories || [];
+    state.recurring = d.recurring || [];
+    state.budgets = d.budgets || [];
+    state.bills = d.bills || [];
+    state.goals = d.goals || [];
+    state.trendRows = d.trendRows || [];
+    state.hasAnyTx = d.hasAnyTx !== false;
+    state.hints = null;
+    state.suggestions = [];
+    if (d.email && !$('account-email').textContent) $('account-email').textContent = d.email;
+    state.viewingCache = true;
+    state.transactions = localMonth();
+    render();
+    updateBanner();
+    openShortcut();
+  }
+
+  function updateBanner() {
+    const pending = pendingList().length;
+    const offline = !navigator.onLine || state.viewingCache;
+    const box = $('offline-banner');
+    const label = pending === 1 ? '1 lançamento aguardando envio' : `${pending} lançamentos aguardando envio`;
+    if (offline) {
+      $('offline-text').textContent = 'Sem conexão. Você vê a última cópia salva; lançamentos novos ficam neste aparelho' +
+        (pending ? ` (${label}).` : '.');
+    } else if (pending) {
+      $('offline-text').textContent = label + '.';
+    }
+    box.hidden = !(offline || pending);
+    box.classList.toggle('warn', pending > 0);
+    $('offline-sync').hidden = offline || !pending;
+  }
+
+  let flushing = false;
+  // Envia os lançamentos feitos offline. O id é criado no aparelho e o envio ignora duplicados,
+  // então repetir não cria lançamento em dobro. Devolve quantos foram enviados.
+  async function flushQueue() {
+    if (flushing || !state.userId || !navigator.onLine) return 0;
+    const queue = store.queue(state.userId);
+    if (queue.length === 0) return 0;
+    flushing = true;
+    let sent = 0;
+    try {
+      for (const item of queue) {
+        const row = {
+          id: item.id, type: item.type, amount: item.amount, description: item.description,
+          category_id: item.category_id, occurred_on: item.occurred_on, created_at: item.created_at,
+        };
+        const send = (r) => sb.from('transactions').upsert(r, { onConflict: 'id', ignoreDuplicates: true });
+        let { error } = await send(row);
+        if (error && !Offline.isNetworkError(error) && row.category_id) {
+          // categoria apagada enquanto estava offline: envia sem categoria
+          ({ error } = await send({ ...row, category_id: null }));
+        }
+        if (error) {
+          if (!Offline.isNetworkError(error)) toast(friendlyError(error));
+          break;
+        }
+        store.remove(state.userId, [item.id]);
+        sent++;
+      }
+    } finally {
+      flushing = false;
+    }
+    return sent;
+  }
+
+  async function syncNow() {
+    const sent = await flushQueue();
+    if (sent > 0) toast(sent === 1 ? '1 lançamento enviado' : `${sent} lançamentos enviados`);
+    await refresh();
+  }
+
+  $('offline-sync').addEventListener('click', syncNow);
+
+  window.addEventListener('offline', updateBanner);
+  window.addEventListener('online', async () => {
+    if (state.userId) {
+      try {
+        const { data, error } = await sb.auth.getSession();
+        if (!error && !data.session) {
+          // a sessão não vale mais: sai e apaga a cópia local
+          store.clearSnapshot();
+          state.userId = null;
+          showAuth();
+          return;
+        }
+      } catch (err) { /* segue */ }
+      syncNow();
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.userId && navigator.onLine && pendingList().length) syncNow();
+  });
+
   async function refresh() {
+    if (!navigator.onLine) { offlineRefresh(); return; }
+    await flushQueue().then((n) => {
+      if (n > 0) toast(n === 1 ? '1 lançamento enviado' : `${n} lançamentos enviados`);
+    });
     try {
       await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals()]);
     } catch (err) {
+      if (Offline.isNetworkError(err)) { offlineRefresh(); return; }
       toast(friendlyError(err));
       return;
     }
@@ -429,11 +574,12 @@
       const added = await generateRecurring();
       if (added > 0) toast(added === 1 ? '1 lançamento fixo adicionado' : `${added} lançamentos fixos adicionados`);
     } catch (err) {
-      toast(friendlyError(err));
+      if (!Offline.isNetworkError(err)) toast(friendlyError(err));
     }
     try {
       await loadTransactions();
     } catch (err) {
+      if (Offline.isNetworkError(err)) { offlineRefresh(); return; }
       toast(friendlyError(err));
       return;
     }
@@ -452,7 +598,10 @@
     } catch (err) {
       state.trendRows = [];
     }
+    state.viewingCache = false;
+    if (state.trendRows.length || state.hasAnyTx === false) saveSnapshot();
     render();
+    updateBanner();
     renderSecurityOnce();
     openShortcut();
   }
@@ -468,6 +617,11 @@
 
   // Só troca de mês: não recarrega categorias nem recorrências.
   async function refreshMonth() {
+    if (!navigator.onLine || state.viewingCache) {
+      state.transactions = localMonth();
+      render();
+      return;
+    }
     try {
       await loadTransactions();
       render();
@@ -596,7 +750,7 @@
   }
 
   function renderTrend() {
-    const series = Trend.monthlySeries(state.trendRows, new Date());
+    const series = Trend.monthlySeries(state.trendRows.concat(pendingList()), new Date());
     $('trend').hidden = !Trend.hasData(series);
     if (!Trend.hasData(series)) return;
     state.trendSeries = series;
@@ -741,7 +895,12 @@
         );
         const sign = t.type === 'income' ? '+ ' : '− ';
         btn.append(el('span', 'dot'), info, el('span', 'amount', sign + brl.format(t.amount)));
-        btn.addEventListener('click', () => openSheet(t));
+        if (t.pending) {
+          btn.classList.add('pending');
+          btn.addEventListener('click', () => toast('Este lançamento ainda não foi enviado. Ele sobe sozinho quando a internet voltar.'));
+        } else {
+          btn.addEventListener('click', () => openSheet(t));
+        }
         group.append(btn);
       }
       box.append(group);
@@ -964,6 +1123,34 @@
     };
 
     const save = $('tx-save');
+
+    function saveOffline() {
+      const item = store.enqueue(state.userId, { id: Offline.newId(), ...payload, created_at: new Date().toISOString() });
+      if (!item) {
+        errorBox.textContent = 'Sem conexão e sem espaço para guardar neste aparelho. Tente de novo com internet.';
+        errorBox.hidden = false;
+        return false;
+      }
+      sheet.close();
+      state.month = firstOfMonth(parseYmd(date));
+      state.viewingCache = state.viewingCache || !navigator.onLine;
+      state.transactions = localMonth();
+      render();
+      updateBanner();
+      toast('Salvo neste aparelho. Envio automático quando a internet voltar.');
+      return true;
+    }
+
+    if (!navigator.onLine) {
+      if (state.editing) {
+        errorBox.textContent = 'Sem conexão: editar precisa de internet. Lançamentos novos funcionam offline.';
+        errorBox.hidden = false;
+        return;
+      }
+      saveOffline();
+      return;
+    }
+
     save.disabled = true;
     const query = state.editing
       ? sb.from('transactions').update(payload).eq('id', state.editing.id)
@@ -971,6 +1158,10 @@
     const { error } = await query;
     save.disabled = false;
 
+    if (error && !state.editing && Offline.isNetworkError(error)) {
+      saveOffline();
+      return;
+    }
     if (error) {
       errorBox.textContent = friendlyError(error);
       errorBox.hidden = false;
@@ -985,6 +1176,11 @@
 
   $('tx-delete').addEventListener('click', async () => {
     if (!state.editing) return;
+    if (!navigator.onLine) {
+      $('tx-error').textContent = 'Sem conexão: excluir precisa de internet.';
+      $('tx-error').hidden = false;
+      return;
+    }
     if (!confirm('Excluir este lançamento?')) return;
     const { error } = await sb.from('transactions').delete().eq('id', state.editing.id);
     if (error) {
@@ -2165,6 +2361,7 @@
     }
 
     deleteSheet.close();
+    store.clearAll();
     // A conta já não existe: encerra só a sessão local, sem chamar o servidor.
     await sb.auth.signOut({ scope: 'local' });
     toast('Conta excluída');
@@ -2181,6 +2378,16 @@
       // adiado: não chamar o Supabase de dentro do callback de autenticação
       setTimeout(enterApp, 0);
     } else {
+      // Aberto sem internet e sem sessão carregada: usa a cópia local, se houver.
+      if (!navigator.onLine) {
+        const snap = store.loadSnapshot();
+        if (snap) {
+          state.userId = snap.userId;
+          setTimeout(enterApp, 0);
+          return;
+        }
+      }
+      store.clearSnapshot();
       state.categories = [];
       state.transactions = [];
       state.recurring = [];

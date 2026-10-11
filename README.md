@@ -14,6 +14,7 @@ App de controle financeiro (PWA) feito com HTML, CSS e JavaScript puros. Os arqu
 - Alterar senha em Ajustes → Segurança, informando a senha atual (combina com a opção do Supabase que exige a senha antiga) e as mesmas regras do cadastro; com a verificação em duas etapas ativa, também pede o código do autenticador
 - Segurança: verificação em duas etapas opcional (app autenticador), cópia de todos os dados em JSON, texto de privacidade e política de conteúdo (CSP) na página
 - Exportação de lançamentos em CSV, do mês ou de tudo (Ajustes → Dados)
+- Modo offline: o app abre sem internet com a última cópia dos dados; lançamentos novos ficam na fila do aparelho e sobem sozinhos quando a conexão volta (editar e excluir precisam de internet; sair do app apaga a cópia local)
 - Gráfico "Últimos 6 meses" no Resumo: receitas × despesas por mês, toque no mês para ver os valores e botão para ver em tabela
 - Metas com valor, quanto já foi guardado, prazo e quanto guardar por mês (Ajustes → Metas)
 - Orçamento mensal por categoria, com barra de progresso e aviso a partir de 80% (Ajustes → Orçamento mensal)
@@ -43,6 +44,7 @@ O esquema do banco está em `supabase/schema.sql`. A chave usada em `app.js` é 
 - `tests/smoke/`: teste de fumaça no navegador com Supabase de mentira (`python3 tests/smoke/smoke.py`)
 - `password.js`: regras de senha e de e-mail do cadastro, testadas em `tests/`
 - `quick.js`: sugestões e atalhos para digitar menos, testados em `tests/`
+- `offline.js`: cópia local e fila de lançamentos offline, testados em `tests/`
 - `trend.js`: série mensal e escala do gráfico, testados em `tests/`
 - `exporter.js`: CSV de exportação e cálculo das metas, testados em `tests/`
 - `budget.js`: regras de orçamento e contas a vencer, também testadas em `tests/`

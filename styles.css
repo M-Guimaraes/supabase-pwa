@@ -801,3 +801,8 @@ main { padding: 0 1rem; }
   * { transition: none !important; animation: none !important; }
 }
 .trend-table td:not(:first-child) { white-space: nowrap; }
+
+.offline-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 1rem; background: var(--tint); border-bottom: 1px solid var(--line-strong); color: var(--ink); font-size: 0.8125rem; }
+.offline-banner.warn { border-bottom-color: var(--warn); }
+.offline-banner .link-btn { flex: none; background: none; border: 0; padding: 0.25rem 0; color: var(--brand); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.tx.pending .sub::after { content: ' · aguardando envio'; color: var(--warn); font-weight: 700; }

@@ -76,6 +76,7 @@
             if (current_password !== 'Senha#Atual1') return { error: { message: 'Invalid current password' } };
             return { data: {}, error: null };
           },
+          getSession: async () => ({ data: { session: { user: { id: 'u1', email: 'marcelo@exemplo.com' } } }, error: null }),
           signOut: async () => ({}),
           signUp: async () => ({ data: {}, error: null }),
           signInWithPassword: async () => ({ error: null }),
