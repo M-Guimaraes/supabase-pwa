@@ -10,7 +10,7 @@ Estados possíveis: pendente, em andamento, concluído.
 | 4 | Gastos recorrentes e assinaturas | 2 | implementado, falta testar no celular |
 | 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | implementado, falta testar no celular |
 | 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV e metas implementados, falta testar; offline e casais pendentes |
-| 2 | Menos digitação manual | 5 | pendente |
+| 2 | Menos digitação manual | 5 | implementado, falta testar no celular |
 | 5 | Segurança e controle dos dados | 6 | pendente |
 | 6 | Preço baixo e simplicidade | 7 | pendente |
 | 1B | Sincronização automática (Open Finance) | 8 | pendente |
@@ -64,7 +64,9 @@ Pronto quando: um item por vez, cada um testado no celular.
 
 ## 2. Menos digitação manual
 
-Status: pendente
+Status: implementado em 11/10/2026, falta testar no celular.
+
+Feito: a tela de novo lançamento já abria com o valor em foco e data de hoje; agora há categoria sugerida ao digitar a descrição (usa a categoria mais recente de descrição parecida, e some se você escolher outra), lista das descrições recentes, botão "Repetir o último" (mostra o que será repetido) e atalhos "Nova despesa" e "Nova receita" no manifesto, que abrem o formulário direto. Os atalhos aparecem ao segurar o ícone no Android; o iOS não mostra atalhos de PWA. Sem notificações. Testes em `tests/quick.test.js`.
 
 1. Tela de novo lançamento com o valor primeiro e campos mínimos.
 2. Botão para repetir o último lançamento.

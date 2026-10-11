@@ -336,6 +336,11 @@ main { padding: 0 1rem; }
 .goal-note { margin: -0.3rem 0.9rem 0.7rem; font-size: 0.85rem; color: var(--ink-soft); }
 .goal-note.late { color: var(--neg); font-weight: 600; }
 
+/* ---------- Digitar menos ---------- */
+
+.repeat { width: 100%; margin-top: 0.6rem; justify-content: center; text-align: center; }
+.hint-line { margin-top: 0.4rem; font-size: 0.85rem; color: var(--ink-soft); }
+
 /* ---------- Importar extrato ---------- */
 
 .import-summary { margin: 1rem 0 0.15rem; font-weight: 600; }

@@ -164,14 +164,18 @@
         <label for="type-income">Receita</label>
       </div>
 
+      <button id="tx-repeat" class="btn small repeat" type="button" hidden></button>
+
       <label for="tx-amount">Valor</label>
       <input id="tx-amount" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
 
       <label for="tx-desc">Descrição</label>
-      <input id="tx-desc" type="text" maxlength="80" placeholder="Ex.: Mercado" autocomplete="off">
+      <input id="tx-desc" type="text" maxlength="80" placeholder="Ex.: Mercado" autocomplete="off" list="desc-options">
+      <datalist id="desc-options"></datalist>
 
       <label for="tx-category">Categoria</label>
       <select id="tx-category"></select>
+      <p id="tx-hint" class="hint-line" hidden></p>
 
       <label for="tx-date">Data</label>
       <input id="tx-date" type="date" required>
@@ -381,6 +385,7 @@
   <script src="recurring.js"></script>
   <script src="budget.js"></script>
   <script src="exporter.js"></script>
+  <script src="quick.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

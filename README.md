@@ -8,6 +8,7 @@ App de controle financeiro (PWA) feito com HTML, CSS e JavaScript puros. Os arqu
 - Receitas e despesas por mês, com saldo e divisão por categoria
 - Categorias próprias (já vem com algumas padrão)
 - Importação de extrato bancário em OFX ou CSV, com prévia e sem duplicar lançamentos (Ajustes → Importar extrato)
+- Menos digitação: categoria sugerida pela descrição, descrições recentes ao digitar, botão "Repetir o último" e atalhos "Nova despesa" e "Nova receita" na tela inicial do celular (os atalhos dependem do sistema: funcionam no Android ao segurar o ícone)
 - Exportação de lançamentos em CSV, do mês ou de tudo (Ajustes → Dados)
 - Metas com valor, quanto já foi guardado, prazo e quanto guardar por mês (Ajustes → Metas)
 - Orçamento mensal por categoria, com barra de progresso e aviso a partir de 80% (Ajustes → Orçamento mensal)
@@ -34,6 +35,7 @@ O esquema do banco está em `supabase/schema.sql`. A chave usada em `app.js` é 
 
 - `index.html`, `styles.css`, `app.js`: o app
 - `importer.js`: leitor de extratos OFX e CSV (testes em `tests/`, rodar com `node --test`)
+- `quick.js`: sugestões e atalhos para digitar menos, testados em `tests/`
 - `exporter.js`: CSV de exportação e cálculo das metas, testados em `tests/`
 - `budget.js`: regras de orçamento e contas a vencer, também testadas em `tests/`
 - `recurring.js`: regras dos lançamentos fixos (geração mensal, sugestões e total), também testadas em `tests/`

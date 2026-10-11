@@ -21,6 +21,9 @@
     budgets: [],
     bills: [],
     goals: [],
+    hints: null,
+    shortcut: Quick.parseShortcut(location.search),
+    categoryTouched: false,
     editingGoal: null,
     editingBudget: null,
     editingBill: null,
@@ -200,6 +203,18 @@
     state.goals = data.map((g) => ({ ...g, target_amount: Number(g.target_amount), saved_amount: Number(g.saved_amount) }));
   }
 
+  // Lançamentos digitados à mão, do mais novo ao mais antigo: base das sugestões ao digitar.
+  async function loadHints() {
+    const { data, error } = await sb
+      .from('transactions')
+      .select('type, amount, description, category_id')
+      .is('external_id', null)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    state.hints = Quick.buildHints(data);
+  }
+
   async function loadRecurring() {
     const { data, error } = await sb
       .from('recurring_transactions')
@@ -287,7 +302,22 @@
     } catch (err) {
       state.suggestions = [];
     }
+    try {
+      await loadHints();
+    } catch (err) {
+      state.hints = null;
+    }
     render();
+    openShortcut();
+  }
+
+  // Atalho da tela inicial ("Nova despesa" / "Nova receita"): abre o formulário uma vez.
+  function openShortcut() {
+    if (!state.shortcut) return;
+    const type = state.shortcut;
+    state.shortcut = null;
+    try { history.replaceState(null, '', location.pathname); } catch (err) { /* sem problema */ }
+    openSheet(null, type);
   }
 
   // Só troca de mês: não recarrega categorias nem recorrências.
@@ -518,18 +548,79 @@
     return document.querySelector('input[name="type"]:checked').value;
   }
 
+  function showHint(message) {
+    $('tx-hint').textContent = message || '';
+    $('tx-hint').hidden = !message;
+  }
+
+  function fillDescriptionOptions(type) {
+    const list = $('desc-options');
+    list.replaceChildren();
+    if (!state.hints) return;
+    for (const d of Quick.recentDescriptions(state.hints, type)) {
+      const o = el('option');
+      o.value = d;
+      list.append(o);
+    }
+  }
+
   document.querySelectorAll('input[name="type"]').forEach((r) =>
-    r.addEventListener('change', () => fillCategoryOptions(currentType(), ''))
+    r.addEventListener('change', () => {
+      fillCategoryOptions(currentType(), '');
+      fillDescriptionOptions(currentType());
+      state.categoryTouched = false;
+      showHint('');
+    })
   );
 
-  function openSheet(tx) {
+  // Ao digitar a descrição de um lançamento novo, sugere a categoria usada antes.
+  $('tx-desc').addEventListener('input', () => {
+    if (state.editing || state.categoryTouched || !state.hints) return;
+    const type = currentType();
+    const id = Quick.suggestCategory(state.hints, type, $('tx-desc').value);
+    const valid = id && state.categories.some((c) => c.id === id && c.type === type);
+    $('tx-category').value = valid ? id : '';
+    showHint(valid ? `Categoria sugerida: ${categoryName(id)}` : '');
+  });
+
+  $('tx-category').addEventListener('change', () => {
+    state.categoryTouched = true;
+    showHint('');
+  });
+
+  $('tx-repeat').addEventListener('click', () => {
+    const last = state.hints && state.hints.last;
+    if (!last) return;
+    $(`type-${last.type}`).checked = true;
+    $('tx-amount').value = last.amount.toFixed(2).replace('.', ',');
+    $('tx-desc').value = last.description;
+    fillCategoryOptions(last.type, last.category_id);
+    fillDescriptionOptions(last.type);
+    state.categoryTouched = true;
+    showHint('');
+    $('tx-save').focus();
+  });
+
+  // tx = lançamento a editar; presetType = tipo inicial de um lançamento novo.
+  function openSheet(tx, presetType) {
     state.editing = tx || null;
+    state.categoryTouched = false;
+    showHint('');
     $('tx-error').hidden = true;
     $('sheet-title').textContent = tx ? 'Editar lançamento' : 'Novo lançamento';
     $('tx-delete').hidden = !tx;
 
-    const type = tx ? tx.type : 'expense';
+    const type = tx ? tx.type : presetType || 'expense';
     $(`type-${type}`).checked = true;
+    fillDescriptionOptions(type);
+
+    const last = state.hints && state.hints.last;
+    const repeat = $('tx-repeat');
+    repeat.hidden = !!tx || !last;
+    if (last) {
+      const what = last.description || categoryName(last.category_id);
+      repeat.textContent = `Repetir o último: ${what}, ${brl.format(last.amount)}`;
+    }
     $('tx-amount').value = tx ? tx.amount.toFixed(2).replace('.', ',') : '';
     $('tx-desc').value = tx ? tx.description || '' : '';
     fillCategoryOptions(type, tx ? tx.category_id : '');
@@ -1602,6 +1693,7 @@
       state.budgets = [];
       state.bills = [];
       state.goals = [];
+      state.hints = null;
       state.suggestions = [];
       showAuth();
     }
