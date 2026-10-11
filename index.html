@@ -67,7 +67,8 @@
   <div id="app" class="app" hidden>
     <header class="topbar">
       <img class="topbar-mark" src="icons/logo.svg" alt="Caixa" width="32" height="32">
-      <div class="month-nav">
+      <h2 id="topbar-title" class="topbar-title" hidden>Lançamentos</h2>
+      <div id="month-nav" class="month-nav">
         <button id="month-prev" class="icon-btn" type="button" aria-label="Mês anterior">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg>
         </button>
@@ -184,8 +185,33 @@
       </section>
 
       <section id="view-list" class="view" data-view="list" hidden>
+        <div class="period">
+          <div class="segmented three" role="radiogroup" aria-label="Período da lista">
+            <input type="radio" name="period" id="period-day" value="day" checked>
+            <label for="period-day">Dia</label>
+            <input type="radio" name="period" id="period-month" value="month">
+            <label for="period-month">Mês</label>
+            <input type="radio" name="period" id="period-year" value="year">
+            <label for="period-year">Ano</label>
+          </div>
+          <div class="period-nav">
+            <button id="period-prev" class="icon-btn" type="button" aria-label="Período anterior">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg>
+            </button>
+            <strong id="period-label" aria-live="polite"></strong>
+            <button id="period-next" class="icon-btn" type="button" aria-label="Próximo período">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+          <div class="period-tools">
+            <label for="period-pick" class="sr-only">Ir para uma data</label>
+            <input id="period-pick" type="date">
+            <button id="period-today" class="btn small" type="button" hidden>Voltar para hoje</button>
+          </div>
+          <p id="period-totals" class="period-totals"></p>
+        </div>
         <div id="tx-groups"></div>
-        <p id="tx-empty" class="empty" hidden>Nenhum lançamento neste mês. Toque em + para adicionar.</p>
+        <p id="tx-empty" class="empty" hidden>Nenhum lançamento neste período. Toque em + para adicionar.</p>
       </section>
 
       <section id="view-categories" class="view" data-view="categories" hidden>
@@ -632,6 +658,7 @@
   <script src="quick.js"></script>
   <script src="password.js"></script>
   <script src="classifier.js"></script>
+  <script src="period.js"></script>
   <script src="trend.js"></script>
   <script src="offline.js"></script>
   <script src="app.js"></script>

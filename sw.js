@@ -1,4 +1,4 @@
-const CACHE = 'caixa-v15';
+const CACHE = 'caixa-v17';
 const SHELL = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ const SHELL = [
   'quick.js',
   'password.js',
   'classifier.js',
+  'period.js',
   'trend.js',
   'offline.js',
   'app.js',

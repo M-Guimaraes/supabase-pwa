@@ -893,3 +893,21 @@ main { padding: 0 1rem; }
   .sheet { max-width: 520px; margin: auto; border-radius: var(--sheet-radius); padding-bottom: 1.25rem; max-height: 88vh; max-height: 88dvh; }
   #import-sheet { max-width: 760px; }
 }
+
+/* ---------- Filtro de período da lista ---------- */
+.segmented.three { grid-template-columns: repeat(3, 1fr); }
+.period { margin-bottom: 1rem; }
+.period .segmented { max-width: 20rem; }
+.period-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.6rem; padding: 0.15rem 0.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.period-nav strong { flex: 1; text-align: center; font-family: var(--serif); font-size: 1.05rem; }
+.period-nav strong::first-letter { text-transform: uppercase; }
+.period-tools { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.6rem; }
+.period-tools input { flex: 1; min-height: 40px; max-width: 14rem; font-size: 0.875rem; }
+.period-totals { display: flex; flex-wrap: wrap; gap: 0.15rem 1.1rem; margin-top: 0.7rem; font-size: 0.875rem; color: var(--ink-soft); }
+.period-totals span { white-space: nowrap; }
+.period-totals .note { flex-basis: 100%; white-space: normal; color: var(--warn); }
+.period-totals b { font-family: var(--serif); font-weight: 400; font-variant-numeric: tabular-nums lining-nums; color: var(--ink); }
+.topbar-title { grid-column: 2; text-align: center; font-family: var(--serif); font-size: 1.05rem; font-weight: 700; }
+@media (min-width: 960px) {
+  .topbar-title { grid-column: 1; text-align: left; font-size: 1.25rem; }
+}

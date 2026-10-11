@@ -17,6 +17,10 @@
     month: firstOfMonth(new Date()),
     categories: [],
     transactions: [],
+    listTx: [],
+    listMode: 'day',
+    listDate: new Date(),
+    listPartial: false,
     recurring: [],
     budgets: [],
     bills: [],
@@ -254,6 +258,8 @@
     showApp();
     switchTab('summary');
     state.month = firstOfMonth(new Date());
+    state.listMode = 'day';
+    state.listDate = new Date();
     state.lastGeneration = null;
     refresh();
   }
@@ -310,6 +316,68 @@
     if (error) throw error;
     const rows = data.map((t) => ({ ...t, amount: Number(t.amount) }));
     state.transactions = Offline.mergePending(rows, pendingList(), start, next);
+  }
+
+  /* ---------- Lista por dia, mês ou ano ---------- */
+
+  function listRange() { return Period.range(state.listMode, state.listDate); }
+
+  // Sem internet: usa o que está salvo no aparelho (últimos 6 meses) mais a fila.
+  function listLocal() {
+    const { start, next } = listRange();
+    const rows = (state.yearRows[state.listDate.getFullYear()] || []).length > 0 && state.listMode === 'year'
+      ? state.trendRows.concat(state.yearRows[state.listDate.getFullYear()])
+      : state.trendRows;
+    state.listPartial = start < Trend.windowStart(new Date(), 6);
+    // trendRows e yearRows podem repetir lançamentos: dedupe por id quando existir
+    const seen = new Set();
+    const unique = rows.filter((t) => {
+      if (!t.id) return true;
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+    return Offline.mergePending(unique, pendingList(), start, next);
+  }
+
+  async function loadList() {
+    if (!navigator.onLine || state.viewingCache) {
+      state.listTx = listLocal();
+      return;
+    }
+    const { start, next } = listRange();
+    const rows = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('id, type, amount, description, occurred_on, category_id, created_at')
+        .gte('occurred_on', start)
+        .lt('occurred_on', next)
+        .order('occurred_on', { ascending: false })
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(from, from + 999);
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+    state.listPartial = false;
+    state.listTx = Offline.mergePending(rows.map((t) => ({ ...t, amount: Number(t.amount) })), pendingList(), start, next);
+  }
+
+  async function refreshList() {
+    try {
+      await loadList();
+    } catch (err) {
+      if (Offline.isNetworkError(err)) state.listTx = listLocal();
+      else toast(friendlyError(err));
+    }
+    renderList();
+  }
+
+  // Depois de salvar um lançamento, a lista passa a mostrar a data dele se estiver fora do período atual.
+  function focusListOn(dateStr) {
+    if (!Period.contains(state.listMode, state.listDate, dateStr)) state.listDate = parseYmd(dateStr);
   }
 
   async function loadBudgets() {
@@ -499,6 +567,7 @@
     if (d.email && !$('account-email').textContent) $('account-email').textContent = d.email;
     state.viewingCache = true;
     state.transactions = localMonth();
+    state.listTx = listLocal();
     render();
     updateBanner();
     openShortcut();
@@ -606,6 +675,12 @@
       if (Offline.isNetworkError(err)) { offlineRefresh(); return; }
       toast(friendlyError(err));
       return;
+    }
+    try {
+      await loadList();
+    } catch (err) {
+      if (Offline.isNetworkError(err)) { offlineRefresh(); return; }
+      toast(friendlyError(err));
     }
     try {
       await loadRecurringSuggestions();
@@ -1018,10 +1093,15 @@
   function renderList() {
     const box = $('tx-groups');
     box.replaceChildren();
-    $('tx-empty').hidden = state.transactions.length > 0;
+    renderPeriodBar();
+    const rows = state.listTx;
+    $('tx-empty').hidden = rows.length > 0;
+    $('tx-empty').textContent = Period.isDefault(state.listMode, state.listDate, new Date())
+      ? 'Nenhum lançamento hoje. Toque em + para adicionar.'
+      : 'Nenhum lançamento neste período. Toque em + para adicionar.';
 
     const byDay = new Map();
-    for (const t of state.transactions) {
+    for (const t of rows) {
       if (!byDay.has(t.occurred_on)) byDay.set(t.occurred_on, []);
       byDay.get(t.occurred_on).push(t);
     }
@@ -1166,6 +1246,85 @@
     }
   });
 
+  /* ---------- Barra de período da lista ---------- */
+
+  const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const yearFmt = new Intl.DateTimeFormat('pt-BR', { year: 'numeric' });
+
+  function periodLabel() {
+    const d = state.listDate;
+    if (state.listMode === 'year') return yearFmt.format(d);
+    if (state.listMode === 'month') return monthFmt.format(d);
+    const off = Period.dayOffset(d, new Date());
+    const base = weekdayFmt.format(d);
+    if (off === 0) return `Hoje, ${base}`;
+    if (off === -1) return `Ontem, ${base}`;
+    if (off === 1) return `Amanhã, ${base}`;
+    return `${base} de ${d.getFullYear()}`;
+  }
+
+  function pickValue() {
+    const d = state.listDate;
+    if (state.listMode === 'year') return String(d.getFullYear());
+    if (state.listMode === 'month') return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+    return ymd(d);
+  }
+
+  function renderPeriodBar() {
+    $(`period-${state.listMode}`).checked = true;
+    $('period-label').textContent = periodLabel();
+    const pick = $('period-pick');
+    const type = state.listMode === 'year' ? 'number' : state.listMode === 'month' ? 'month' : 'date';
+    if (pick.type !== type) pick.type = type;
+    if (type === 'number') { pick.min = '2000'; pick.max = '2100'; pick.step = '1'; pick.inputMode = 'numeric'; }
+    pick.value = pickValue();
+    pick.setAttribute('aria-label', state.listMode === 'year' ? 'Ir para um ano' : state.listMode === 'month' ? 'Ir para um mês' : 'Ir para um dia');
+    $('period-today').hidden = Period.isDefault(state.listMode, state.listDate, new Date());
+
+    let income = 0;
+    let expense = 0;
+    for (const t of state.listTx) {
+      if (t.type === 'income') income += t.amount; else expense += t.amount;
+    }
+    const box = $('period-totals');
+    box.replaceChildren();
+    if (state.listTx.length > 0) {
+      const part = (label, value) => { const s = el('span'); s.append(`${label} `, el('b', '', brl.format(value))); return s; };
+      box.append(part('Receitas', income), part('Despesas', expense), part('Saldo', income - expense));
+    }
+    if (state.listPartial) {
+      box.append(el('span', 'note', 'Sem conexão: só aparece o que está salvo neste aparelho (últimos 6 meses).'));
+    }
+  }
+
+  document.querySelectorAll('input[name=period]').forEach((input) => {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      state.listMode = input.value;
+      refreshList();
+    });
+  });
+  $('period-prev').addEventListener('click', () => { state.listDate = Period.shift(state.listMode, state.listDate, -1); refreshList(); });
+  $('period-next').addEventListener('click', () => { state.listDate = Period.shift(state.listMode, state.listDate, 1); refreshList(); });
+  $('period-today').addEventListener('click', () => { state.listMode = 'day'; state.listDate = new Date(); refreshList(); });
+  $('period-pick').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (!v) return;
+    let d;
+    if (state.listMode === 'year') {
+      const y = Number(v);
+      if (!(y >= 2000 && y <= 2100)) return;
+      d = new Date(y, state.listDate.getMonth(), Math.min(state.listDate.getDate(), 28));
+    } else if (state.listMode === 'month') {
+      const [y, m] = v.split('-').map(Number);
+      d = new Date(y, m - 1, 1);
+    } else {
+      d = parseYmd(v);
+    }
+    state.listDate = d;
+    refreshList();
+  });
+
   /* ---------- Navegação ---------- */
 
   function switchTab(name) {
@@ -1176,6 +1335,9 @@
     });
     // O botão de novo lançamento só aparece na aba Lançamentos.
     $('fab').hidden = name !== 'list';
+    // Na lista o período vale para o dia, mês ou ano escolhidos ali; nas outras abas, o mês de cima.
+    $('month-nav').hidden = name === 'list';
+    $('topbar-title').hidden = name !== 'list';
     window.scrollTo(0, 0);
     if (name === 'categories') {
       try { localStorage.setItem('caixa-categorias-vistas', '1'); } catch (err) { /* sem problema */ }
@@ -1377,8 +1539,10 @@
       }
       sheet.close();
       state.month = firstOfMonth(parseYmd(date));
+      focusListOn(date);
       state.viewingCache = state.viewingCache || !navigator.onLine;
       state.transactions = localMonth();
+      state.listTx = listLocal();
       render();
       updateBanner();
       toast('Salvo neste aparelho. Envio automático quando a internet voltar.');
@@ -1414,6 +1578,7 @@
 
     sheet.close();
     state.month = firstOfMonth(parseYmd(date));
+    focusListOn(date);
     toast('Lançamento salvo');
     await refresh();
   });
@@ -2705,6 +2870,7 @@
       store.clearSnapshot();
       state.categories = [];
       state.transactions = [];
+      state.listTx = [];
       state.recurring = [];
       state.budgets = [];
       state.bills = [];
