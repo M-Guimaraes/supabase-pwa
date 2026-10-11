@@ -101,6 +101,12 @@
         <h3 class="section-title">Receitas</h3>
         <ul id="cats-income" class="cat-list"></ul>
 
+        <h3 class="section-title">Metas</h3>
+        <p class="account-note">Guarde dinheiro para um objetivo e acompanhe o progresso.</p>
+        <ul id="goals-list" class="goal-list"></ul>
+        <p id="goals-empty" class="empty" hidden>Nenhuma meta ainda.</p>
+        <button id="goal-add" class="btn" type="button">Nova meta</button>
+
         <h3 class="section-title">Orçamento mensal</h3>
         <p class="account-note">Defina quanto pretende gastar por categoria. O Resumo avisa a partir de 80%.</p>
         <ul id="budget-edit-list" class="rec-list"></ul>
@@ -126,6 +132,11 @@
         <h3 class="section-title">Dados</h3>
         <p class="account-note">Traga lançamentos de um extrato do seu banco, em OFX ou CSV.</p>
         <button id="import-open" class="btn" type="button">Importar extrato</button>
+        <p class="account-note">Baixe seus lançamentos em CSV, para abrir no Excel ou no Planilhas.</p>
+        <div class="btn-row">
+          <button id="export-month" class="btn" type="button">Exportar mês</button>
+          <button id="export-all" class="btn" type="button">Exportar tudo</button>
+        </div>
 
         <h3 class="section-title">Conta</h3>
         <p id="account-email" class="account-email"></p>
@@ -263,6 +274,37 @@
     </form>
   </dialog>
 
+  <dialog id="goal-sheet" class="sheet" aria-labelledby="goal-title">
+    <form id="goal-form" method="dialog" novalidate>
+      <h3 id="goal-title">Nova meta</h3>
+
+      <label for="goal-name">Nome</label>
+      <input id="goal-name" type="text" maxlength="60" placeholder="Ex.: Viagem" autocomplete="off" required>
+
+      <label for="goal-target">Valor da meta</label>
+      <input id="goal-target" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+
+      <label for="goal-saved">Já guardado</label>
+      <input id="goal-saved" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off">
+
+      <div id="goal-more-row" hidden>
+        <label for="goal-more">Guardar mais agora (soma ao valor guardado)</label>
+        <input id="goal-more" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off">
+      </div>
+
+      <label for="goal-deadline">Prazo (opcional)</label>
+      <input id="goal-deadline" type="date">
+
+      <p id="goal-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="goal-delete" class="btn danger" type="button" hidden>Excluir</button>
+        <button id="goal-cancel" class="btn" type="button">Cancelar</button>
+        <button id="goal-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="import-sheet" class="sheet" aria-labelledby="import-title">
     <form id="import-form" method="dialog" novalidate>
       <h3 id="import-title">Importar extrato</h3>
@@ -338,6 +380,7 @@
   <script src="importer.js"></script>
   <script src="recurring.js"></script>
   <script src="budget.js"></script>
+  <script src="exporter.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

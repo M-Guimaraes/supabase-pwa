@@ -326,6 +326,16 @@ main { padding: 0 1rem; }
 .cat-list .bill-text .sub { display: block; font-size: 0.85rem; color: var(--ink-soft); }
 .cat-list li.bill-late .bill-text .sub { color: var(--neg); font-weight: 600; }
 
+/* ---------- Metas e exportação ---------- */
+
+.btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.goal-list li { margin-bottom: 0.4rem; background: var(--surface); border-radius: var(--radius); }
+.goal-list .tx { margin-bottom: 0; background: none; }
+.goal-bar { height: 8px; margin: 0 0.9rem 0.75rem; border-radius: 99px; background: var(--line); overflow: hidden; }
+.goal-bar span { display: block; height: 100%; background: var(--pos); border-radius: 99px; }
+.goal-note { margin: -0.3rem 0.9rem 0.7rem; font-size: 0.85rem; color: var(--ink-soft); }
+.goal-note.late { color: var(--neg); font-weight: 600; }
+
 /* ---------- Importar extrato ---------- */
 
 .import-summary { margin: 1rem 0 0.15rem; font-weight: 600; }
@@ -466,7 +476,7 @@ main { padding: 0 1rem; }
 #rtype-income:checked + label { color: var(--pos); }
 .segmented input:focus-visible + label { outline: 3px solid var(--focus); outline-offset: 1px; }
 
-#tx-amount, #rec-amount, #bud-amount, #bill-amount {
+#tx-amount, #rec-amount, #bud-amount, #bill-amount, #goal-target {
   width: 100%;
   min-height: 56px;
   padding: 0.6rem 0.85rem;

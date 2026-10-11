@@ -9,7 +9,7 @@ Estados possíveis: pendente, em andamento, concluído.
 | 1A | Importar extrato (CSV e OFX) | 1 | concluído |
 | 4 | Gastos recorrentes e assinaturas | 2 | implementado, falta testar no celular |
 | 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | implementado, falta testar no celular |
-| 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | pendente |
+| 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV e metas implementados, falta testar; offline e casais pendentes |
 | 2 | Menos digitação manual | 5 | pendente |
 | 5 | Segurança e controle dos dados | 6 | pendente |
 | 6 | Preço baixo e simplicidade | 7 | pendente |
@@ -51,7 +51,9 @@ Pronto quando: dá para ver quanto resta de cada categoria no mês.
 
 ## 7. Itens menores: CSV, metas, offline e casais
 
-Status: pendente
+Status: em andamento. Exportar CSV e metas implementados em 11/10/2026, faltam testar no celular. Offline e casais pendentes.
+
+Feito: exportação em CSV (`;`, vírgula decimal, UTF-8 com BOM, despesas negativas, proteção contra fórmulas em planilhas) do mês ou de tudo; tabela `goals` com RLS, tela em Ajustes com barra de progresso, "guardar mais" e valor sugerido por mês até o prazo. Testes em `tests/exporter.test.js`.
 
 - **Exportar CSV:** baixar os lançamentos (do mês ou todos). A importação está no tópico 1A.
 - **Metas:** tabela `goals` (nome, valor alvo, prazo, valor guardado) com barra de progresso.

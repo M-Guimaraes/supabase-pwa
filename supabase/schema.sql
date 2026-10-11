@@ -175,3 +175,24 @@ create policy "bills_update_own" on public.bills
   for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 create policy "bills_delete_own" on public.bills
   for delete to authenticated using (user_id = (select auth.uid()));
+
+-- Metas: valor alvo, valor já guardado e prazo opcional.
+create table public.goals (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name text not null,
+  target_amount numeric(12, 2) not null check (target_amount > 0),
+  saved_amount numeric(12, 2) not null default 0 check (saved_amount >= 0),
+  deadline date,
+  created_at timestamptz not null default now()
+);
+create index goals_user_id_idx on public.goals (user_id);
+alter table public.goals enable row level security;
+create policy "goals_select_own" on public.goals
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "goals_insert_own" on public.goals
+  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "goals_update_own" on public.goals
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "goals_delete_own" on public.goals
+  for delete to authenticated using (user_id = (select auth.uid()));

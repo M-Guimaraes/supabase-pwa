@@ -20,6 +20,8 @@
     recurring: [],
     budgets: [],
     bills: [],
+    goals: [],
+    editingGoal: null,
     editingBudget: null,
     editingBill: null,
     suggestions: [],
@@ -189,6 +191,15 @@
     state.bills = data.map((b) => ({ ...b, amount: Number(b.amount) }));
   }
 
+  async function loadGoals() {
+    const { data, error } = await sb
+      .from('goals')
+      .select('id, name, target_amount, saved_amount, deadline')
+      .order('created_at');
+    if (error) throw error;
+    state.goals = data.map((g) => ({ ...g, target_amount: Number(g.target_amount), saved_amount: Number(g.saved_amount) }));
+  }
+
   async function loadRecurring() {
     const { data, error } = await sb
       .from('recurring_transactions')
@@ -254,7 +265,7 @@
 
   async function refresh() {
     try {
-      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills()]);
+      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals()]);
     } catch (err) {
       toast(friendlyError(err));
       return;
@@ -304,6 +315,7 @@
     renderRecurring();
     renderBudgetSettings();
     renderBills();
+    renderGoals();
   }
 
   function renderSummary() {
@@ -1005,6 +1017,154 @@
     if (ok) billSheet.close();
   });
 
+  /* ---------- Exportar CSV ---------- */
+
+  function downloadText(text, filename) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    const a = el('a');
+    a.href = url;
+    a.download = filename;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  async function loadAllTransactions() {
+    const all = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('id, type, amount, description, occurred_on, category_id')
+        .order('occurred_on', { ascending: false })
+        .order('id')
+        .range(from, from + 999);
+      if (error) throw error;
+      all.push(...data);
+      if (data.length < 1000) return all;
+    }
+  }
+
+  async function exportCSV(button, scope) {
+    button.disabled = true;
+    try {
+      const rows = scope === 'all' ? await loadAllTransactions() : state.transactions;
+      if (rows.length === 0) { toast('Não há lançamentos para exportar.'); return; }
+      const label = scope === 'all' ? 'todos' : monthLabel(state.month);
+      downloadText(Extras.transactionsToCSV(rows, categoryName), Extras.exportFileName(label));
+      toast(`${rows.length} lançamentos exportados`);
+    } catch (err) {
+      toast(friendlyError(err));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  $('export-month').addEventListener('click', (e) => exportCSV(e.currentTarget, 'month'));
+  $('export-all').addEventListener('click', (e) => exportCSV(e.currentTarget, 'all'));
+
+  /* ---------- Metas ---------- */
+
+  const goalSheet = $('goal-sheet');
+
+  function renderGoals() {
+    const today = ymd(new Date());
+    const ul = $('goals-list');
+    ul.replaceChildren();
+    $('goals-empty').hidden = state.goals.length > 0;
+    for (const g of state.goals) {
+      const info = Extras.goalInfo(g, today);
+      const li = el('li');
+      const btn = el('button', 'tx income');
+      btn.type = 'button';
+      const text = el('span', 'info');
+      text.append(
+        el('span', 'title', g.name),
+        el('span', 'sub', `${brl.format(g.saved_amount)} de ${brl.format(g.target_amount)}`)
+      );
+      btn.append(el('span', 'dot'), text, el('span', 'amount', `${info.percent}%`));
+      btn.addEventListener('click', () => openGoalSheet(g));
+      const bar = el('div', 'goal-bar');
+      const fill = el('span');
+      fill.style.width = `${Math.min(info.percent, 100)}%`;
+      bar.append(fill);
+      li.append(btn, bar);
+
+      let note = '';
+      if (info.done) note = 'Meta alcançada!';
+      else if (info.overdue) note = `Prazo vencido em ${fmtDate(g.deadline)}. Faltam ${brl.format(info.remaining)}.`;
+      else if (g.deadline) note = `Guarde ${brl.format(info.perMonth)} por mês até ${fmtDate(g.deadline)}.`;
+      else note = `Faltam ${brl.format(info.remaining)}.`;
+      li.append(el('p', `goal-note${info.overdue ? ' late' : ''}`, note));
+      ul.append(li);
+    }
+  }
+
+  function openGoalSheet(goal) {
+    state.editingGoal = goal || null;
+    $('goal-error').hidden = true;
+    $('goal-title').textContent = goal ? 'Editar meta' : 'Nova meta';
+    $('goal-delete').hidden = !goal;
+    $('goal-more-row').hidden = !goal;
+    $('goal-name').value = goal ? goal.name : '';
+    $('goal-target').value = goal ? goal.target_amount.toFixed(2).replace('.', ',') : '';
+    $('goal-saved').value = goal && goal.saved_amount ? goal.saved_amount.toFixed(2).replace('.', ',') : '';
+    $('goal-more').value = '';
+    $('goal-deadline').value = goal && goal.deadline ? goal.deadline : '';
+    goalSheet.showModal();
+    if (!goal) $('goal-name').focus();
+  }
+
+  $('goal-add').addEventListener('click', () => openGoalSheet(null));
+  $('goal-cancel').addEventListener('click', () => goalSheet.close());
+
+  $('goal-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('goal-error');
+    errorBox.hidden = true;
+    const fail = (m) => { errorBox.textContent = m; errorBox.hidden = false; };
+
+    const name = $('goal-name').value.trim();
+    const target = parseAmount($('goal-target').value);
+    const savedRaw = $('goal-saved').value.trim();
+    const moreRaw = $('goal-more').value.trim();
+    const saved = savedRaw ? parseAmount(savedRaw) : 0;
+    const more = moreRaw ? parseAmount(moreRaw) : 0;
+    if (!name) return fail('Dê um nome para a meta, por exemplo "Viagem".');
+    if (!(target > 0)) return fail('Informe um valor de meta maior que zero.');
+    if (!(saved >= 0) || !(more >= 0)) return fail('Os valores guardados não podem ser negativos.');
+
+    const payload = {
+      name,
+      target_amount: target,
+      saved_amount: Math.round((saved + more) * 100) / 100,
+      deadline: $('goal-deadline').value || null,
+    };
+    const editing = state.editingGoal;
+    const save = $('goal-save');
+    save.disabled = true;
+    const query = editing
+      ? sb.from('goals').update(payload).eq('id', editing.id)
+      : sb.from('goals').insert(payload);
+    const { error } = await query;
+    save.disabled = false;
+    if (error) return fail(friendlyError(error));
+
+    goalSheet.close();
+    toast('Meta salva');
+    await refresh();
+  });
+
+  $('goal-delete').addEventListener('click', async () => {
+    const g = state.editingGoal;
+    if (!g || !confirm(`Excluir a meta "${g.name}"?`)) return;
+    const { error } = await sb.from('goals').delete().eq('id', g.id);
+    if (error) { $('goal-error').textContent = friendlyError(error); $('goal-error').hidden = false; return; }
+    goalSheet.close();
+    toast('Meta excluída');
+    await refresh();
+  });
+
   /* ---------- Importar extrato ---------- */
 
   const MAX_IMPORT = 1500;
@@ -1441,6 +1601,7 @@
       state.recurring = [];
       state.budgets = [];
       state.bills = [];
+      state.goals = [];
       state.suggestions = [];
       showAuth();
     }
