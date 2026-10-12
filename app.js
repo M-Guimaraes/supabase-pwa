@@ -8,6 +8,13 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // Script inline é bloqueado pelo CSP (script-src sem 'unsafe-inline'), então essa
+  // configuração do pdf.js precisa estar num arquivo externo, não no index.html.
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  }
+
   const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
   const monthFmt = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' });
   const dayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
