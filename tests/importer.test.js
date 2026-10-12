@@ -7,6 +7,7 @@ const path = require('node:path');
 const I = require('../importer.js');
 
 const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name));
+const fixtureText = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
 
 test('CSV no formato do C6: pula o texto inicial e lê entradas e saídas', () => {
   const r = I.parseStatement(fixture('c6-exemplo.csv'));
@@ -172,4 +173,27 @@ test('findImportedDuplicates: mantém o formato com mais linhas e remove só o p
   // com menos linhas no formato novo, só o excedente do par sai
   const rows2 = [mk('c1', 'csv:a:1', '1'), mk('c2', 'csv:a:2', '1'), mk('c3', 'csv:a:3', '1'), mk('o1', 'ofx:A', '2')];
   assert.deepEqual(I.findImportedDuplicates(rows2), ['o1']);
+});
+
+test('PDF no formato do Santander (Extrato Consolidado Inteligente): lê a tabela de Movimentação da Conta Corrente', () => {
+  const text = fixtureText('santander-exemplo.txt');
+  const r = I.parsePDFStatement(text);
+  assert.ok(r, 'reconheceu o schema do Santander');
+  assert.equal(r.skipped, 0);
+  assert.equal(r.items.length, 5);
+
+  assert.deepEqual(
+    r.items.map((i) => [i.date, i.signed, i.description]),
+    [
+      ['2026-09-08', 1000, 'RESGATE CDB/RDB'],
+      ['2026-09-08', -500, 'PAGAMENTO CARTAO CREDITO BCE 07/09 08:36 CARTAO VISA'],
+      ['2026-09-08', -170, 'PIX ENVIADO Fulano de Tal'],
+      ['2026-09-18', 300, 'PIX RECEBIDO CICLANO DA SILVA'],
+      ['2026-09-30', 100, 'LIQUIDO DE VENCIMENTO'],
+    ]
+  );
+});
+
+test('parsePDFStatement devolve null para um PDF de banco não reconhecido', () => {
+  assert.equal(I.parsePDFStatement('qualquer outro texto de pdf, sem relação com nenhum schema'), null);
 });

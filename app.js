@@ -2620,7 +2620,7 @@
     $('import-error').hidden = true;
     try {
       let items;
-      if (imp.parsed.kind === 'ofx') {
+      if (imp.parsed.kind === 'ofx' || imp.parsed.kind === 'pdf') {
         items = imp.parsed.items;
       } else {
         const mapping = readMapping();
@@ -2710,6 +2710,38 @@
 
   $('import-cancel').addEventListener('click', () => importSheet.close());
 
+  // Junta os textos do PDF em linhas (agrupando por posição vertical), uma por "linha
+  // visual" da tabela, pra Importer.parsePDFStatement() ler como se fosse texto puro.
+  async function extractPdfText(buffer) {
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const lines = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const rows = new Map();
+      for (const item of content.items) {
+        if (!item.str) continue;
+        const y = Math.round(item.transform[5]);
+        if (!rows.has(y)) rows.set(y, []);
+        rows.get(y).push(item);
+      }
+      const ys = [...rows.keys()].sort((a, b) => b - a);
+      for (const y of ys) {
+        const row = rows.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
+        let line = '';
+        let lastEnd = null;
+        for (const it of row) {
+          const x = it.transform[4];
+          if (lastEnd !== null && x - lastEnd > 1) line += ' ';
+          line += it.str;
+          lastEnd = x + it.width;
+        }
+        if (line.trim()) lines.push(line.trim());
+      }
+    }
+    return lines.join('\n');
+  }
+
   $('import-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2723,10 +2755,22 @@
       return;
     }
     try {
-      const parsed = Importer.parseStatement(await file.arrayBuffer());
-      if (!parsed) {
-        showImportError('Não reconheci esse arquivo. Use um extrato em OFX ou CSV exportado pelo banco.');
-        return;
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+      let parsed;
+      if (isPdf) {
+        const text = await extractPdfText(await file.arrayBuffer());
+        const result = Importer.parsePDFStatement(text);
+        if (!result) {
+          showImportError('Não reconheci o layout desse PDF. Por enquanto só oferecemos suporte a extratos do Santander em PDF.');
+          return;
+        }
+        parsed = { kind: 'pdf', items: result.items, skipped: result.skipped };
+      } else {
+        parsed = Importer.parseStatement(await file.arrayBuffer());
+        if (!parsed) {
+          showImportError('Não reconheci esse arquivo. Use um extrato em OFX, CSV ou PDF exportado pelo banco.');
+          return;
+        }
       }
       imp.parsed = parsed;
       if (parsed.kind === 'csv') setupMapping(parsed);

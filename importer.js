@@ -266,6 +266,103 @@
     return { items, skipped };
   }
 
+  /* ---------- PDF (extratos bancários em PDF) ----------
+   * Sem mapeamento de colunas: cada banco tem um "schema" próprio (detect + parse),
+   * já que o layout do PDF varia demais de banco para banco para uma heurística única.
+   * app.js extrai o texto do PDF (pdf.js, linha a linha) e passa pra parsePDFStatement().
+   */
+
+  const MONEY_RE = /^-?\d{1,3}(?:\.\d{3})*,\d{2}-?$/;
+  const DOC_RE = /^(-|\d{4,})$/;
+  const DATE_PREFIX_RE = /^(\d{2}\/\d{2})\s*(.*)$/;
+
+  function isNumericOnly(s) {
+    return /^[\d./-]+$/.test(s) && /\d/.test(s);
+  }
+
+  // Tira, do fim da linha, até dois valores monetários (movimento e saldo) e o número de
+  // documento (ou "-") que normalmente vem logo antes. null se a linha não termina em valor.
+  function splitTrailingValues(tokens) {
+    const rest = tokens.slice();
+    const vals = [];
+    while (rest.length && MONEY_RE.test(rest[rest.length - 1]) && vals.length < 2) {
+      vals.unshift(rest.pop());
+    }
+    if (!vals.length) return null;
+    while (rest.length && DOC_RE.test(rest[rest.length - 1])) rest.pop();
+    return { desc: rest.join(' '), movimento: vals[0], saldo: vals.length === 2 ? vals[1] : null };
+  }
+
+  // Extrato Santander (Select / Consolidado Inteligente): tabela "Conta Corrente > Movimentação",
+  // com datas que não se repetem a cada linha e descrições quebradas em várias linhas.
+  const SANTANDER_SCHEMA = {
+    name: 'santander',
+    detect: (text) => /extrato\s+consolidado\s+inteligente/i.test(text) && /santander/i.test(text),
+    parse(text) {
+      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+      const monthYearLine = lines.slice(0, 8).find((l) => /^[a-zçãéô]+\/\d{4}$/i.test(l));
+      const year = monthYearLine ? monthYearLine.split('/')[1] : String(new Date().getFullYear());
+
+      const ccIdx = lines.findIndex((l) => /^conta corrente$/i.test(l));
+      if (ccIdx < 0) return { items: [], skipped: 0 };
+      let start = lines.findIndex((l, i) => i > ccIdx && /^movimenta[cç][aã]o$/i.test(l));
+      if (start < 0) return { items: [], skipped: 0 };
+      start++;
+
+      const STOP_RE = /^(d[ée]bito autom[aá]tico|saldos por per[ií]odo|comprovantes de pagamento|investimentos|renda fixa)/i;
+      const HEADER_RE = /^data\s+descri[cç][aã]o/i;
+      const SALDO_RE = /^saldo em \d{2}\/\d{2}/i;
+
+      let currentDate = null;
+      let pendingDesc = '';
+      let openingSeen = false;
+      const items = [];
+      let skipped = 0;
+
+      for (let i = start; i < lines.length; i++) {
+        const line = lines[i];
+        if (STOP_RE.test(line)) break;
+        if (HEADER_RE.test(line)) continue;
+        if (SALDO_RE.test(line)) {
+          if (!openingSeen) { openingSeen = true; continue; }
+          break;
+        }
+
+        let rest = line;
+        if (!pendingDesc) {
+          const m = line.match(DATE_PREFIX_RE);
+          if (m) { currentDate = parseDate(`${m[1]}/${year}`); rest = m[2]; }
+        }
+
+        const tokens = rest.split(/\s+/).filter(Boolean);
+        const split = tokens.length ? splitTrailingValues(tokens) : null;
+
+        if (!split) {
+          if (rest && !isNumericOnly(rest)) pendingDesc = (pendingDesc ? `${pendingDesc} ` : '') + rest;
+          continue;
+        }
+
+        const description = cleanDescription([pendingDesc, split.desc].filter(Boolean).join(' '));
+        pendingDesc = '';
+        const signed = parseNumber(split.movimento, 'comma');
+        if (!currentDate || signed === null || signed === 0) { skipped++; continue; }
+        items.push({ date: currentDate, description, signed, externalId: null });
+      }
+      return { items, skipped };
+    },
+  };
+
+  const PDF_SCHEMAS = [SANTANDER_SCHEMA];
+
+  // Devolve { items, skipped } se algum schema reconhecer o PDF, ou null se nenhum reconheceu.
+  function parsePDFStatement(text) {
+    for (const schema of PDF_SCHEMAS) {
+      if (schema.detect(text)) return schema.parse(text);
+    }
+    return null;
+  }
+
   /* ---------- Identificadores estáveis (CSV) ---------- */
 
   async function sha256Short(str) {
@@ -389,6 +486,6 @@
     crossDuplicates, findImportedDuplicates,
     decodeBytes, parseDate, parseNumber, detectNumberStyle, analyzeCSV, autoMap,
     mappingIsComplete, csvToItems, isOFX, parseOFX, withIds, parseStatement, view,
-    descriptionKey,
+    descriptionKey, parsePDFStatement,
   };
 });

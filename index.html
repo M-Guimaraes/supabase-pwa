@@ -582,10 +582,10 @@
   <dialog id="import-sheet" class="sheet" aria-labelledby="import-title">
     <form id="import-form" method="dialog" novalidate>
       <h3 id="import-title">Importar extrato</h3>
-      <p class="account-note">Escolha um arquivo OFX ou CSV exportado pelo seu banco. O arquivo é lido neste aparelho e só o que você confirmar é salvo.</p>
+      <p class="account-note">Escolha um arquivo OFX, CSV ou PDF exportado pelo seu banco. O arquivo é lido neste aparelho e só o que você confirmar é salvo.</p>
 
       <label for="import-file">Arquivo</label>
-      <input id="import-file" type="file" accept=".ofx,.qfx,.csv,.txt,.xml,text/csv">
+      <input id="import-file" type="file" accept=".ofx,.qfx,.csv,.txt,.xml,.pdf,text/csv,application/pdf">
 
       <p id="import-error" class="form-error" role="alert" hidden></p>
 
@@ -651,6 +651,13 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
   <script src="importer.js"></script>
   <script src="recurring.js"></script>
   <script src="budget.js"></script>
