@@ -97,7 +97,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
 
 body {
   margin: 0;
@@ -109,7 +109,11 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
 }
+
+button { -webkit-tap-highlight-color: transparent; }
 
 [hidden] { display: none !important; }
 
