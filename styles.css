@@ -731,7 +731,7 @@ main { padding: 0 1rem; }
   left: 0; right: 0; bottom: 0;
   z-index: 6;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   max-width: 560px;
   margin: 0 auto;
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
