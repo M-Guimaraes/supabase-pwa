@@ -175,6 +175,9 @@ test('findImportedDuplicates: mantém o formato com mais linhas e remove só o p
   assert.deepEqual(I.findImportedDuplicates(rows2), ['o1']);
 });
 
+// O fixture também cobre: cabeçalho/rodapé de página se intrometendo no meio da
+// tabela (deve ser ignorado) e o saldo final repetido numa linha solta antes de
+// "SALDO EM dd/mm" (sem descrição, não é lançamento).
 test('PDF no formato do Santander (Extrato Consolidado Inteligente): lê a tabela de Movimentação da Conta Corrente', () => {
   const text = fixtureText('santander-exemplo.txt');
   const r = I.parsePDFStatement(text);

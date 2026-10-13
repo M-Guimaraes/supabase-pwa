@@ -313,15 +313,17 @@
       const STOP_RE = /^(d[ée]bito autom[aá]tico|saldos por per[ií]odo|comprovantes de pagamento|investimentos|renda fixa)/i;
       const HEADER_RE = /^data\s+descri[cç][aã]o/i;
       const SALDO_RE = /^saldo em \d{2}\/\d{2}/i;
+      // Cada página repete título, rodapé com código interno e número de página — nada
+      // disso é lançamento, mas sem filtrar entra no meio da tabela quando a página vira.
+      const FOOTER_RE = /^(extrato_pf_a4_inteligente|balp_uy|p[aá]gina:\s*\d|extrato consolidado inteligente$|[a-zçãéô]+\/\d{4}$)/i;
 
       let currentDate = null;
-      let pendingDesc = '';
       let openingSeen = false;
-      // Em "PIX ENVIADO"/"PIX RECEBIDO" o valor vem na mesma linha da descrição, e o
-      // nome do favorecido só aparece DEPOIS, numa linha de continuação sem valor —
-      // ao contrário dos outros tipos de lançamento, onde a descrição vem antes do
-      // valor. lastPixIdx guarda o índice do último Pix fechado pra anexar esse nome.
-      let lastPixIdx = -1;
+      // O valor de um lançamento quase sempre vem na mesma linha da descrição; o que
+      // aparece depois (nome do favorecido, horário da compra, número de documento
+      // solto) é só complemento do lançamento que acabou de fechar, não o início do
+      // próximo. lastIdx guarda esse lançamento pra anexar essas linhas de continuação.
+      let lastIdx = -1;
       const items = [];
       let skipped = 0;
 
@@ -329,15 +331,24 @@
         const line = lines[i];
         if (STOP_RE.test(line)) break;
         if (HEADER_RE.test(line)) continue;
+        if (FOOTER_RE.test(line)) continue;
         if (SALDO_RE.test(line)) {
           if (!openingSeen) { openingSeen = true; continue; }
           break;
         }
 
         let rest = line;
-        if (!pendingDesc) {
-          const m = line.match(DATE_PREFIX_RE);
-          if (m) { currentDate = parseDate(`${m[1]}/${year}`); rest = m[2]; lastPixIdx = -1; }
+        const m = line.match(DATE_PREFIX_RE);
+        if (m) {
+          // Só conta como data de um novo lançamento se o resto da linha também
+          // fechar com valor — senão é só um "dd/mm" dentro de um texto solto (ex:
+          // horário de uma compra no cartão), e não deve mexer na data corrente.
+          const tokensAfterDate = m[2].split(/\s+/).filter(Boolean);
+          if (tokensAfterDate.length && splitTrailingValues(tokensAfterDate)) {
+            currentDate = parseDate(`${m[1]}/${year}`);
+            lastIdx = -1;
+            rest = m[2];
+          }
         }
 
         const tokens = rest.split(/\s+/).filter(Boolean);
@@ -345,21 +356,21 @@
 
         if (!split) {
           if (!rest || isNumericOnly(rest)) continue;
-          if (!pendingDesc && lastPixIdx >= 0) {
-            items[lastPixIdx].description = cleanDescription(`${items[lastPixIdx].description} ${rest}`);
-            lastPixIdx = -1; // só uma linha de continuação (o nome do favorecido)
-          } else {
-            pendingDesc = pendingDesc ? `${pendingDesc} ${rest}` : rest;
-          }
+          if (lastIdx >= 0) items[lastIdx].description = cleanDescription(`${items[lastIdx].description} ${rest}`);
           continue;
         }
 
-        const description = cleanDescription([pendingDesc, split.desc].filter(Boolean).join(' '));
-        pendingDesc = '';
+        if (!split.desc) {
+          // Valor solto sem nenhuma descrição: geralmente é o saldo repetido numa
+          // linha separada (ex: antes de "SALDO EM dd/mm"), não um lançamento.
+          continue;
+        }
+
+        const description = cleanDescription(split.desc);
         const signed = parseNumber(split.movimento, 'comma');
-        if (!currentDate || signed === null || signed === 0) { skipped++; lastPixIdx = -1; continue; }
+        if (!currentDate || signed === null || signed === 0) { skipped++; lastIdx = -1; continue; }
         items.push({ date: currentDate, description, signed, externalId: null });
-        lastPixIdx = /^pix (enviado|recebido)\b/i.test(description) ? items.length - 1 : -1;
+        lastIdx = items.length - 1;
       }
       return { items, skipped };
     },
