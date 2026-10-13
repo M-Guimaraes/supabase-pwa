@@ -2766,6 +2766,8 @@
       let parsed;
       if (isPdf) {
         const text = await extractPdfText(await file.arrayBuffer());
+        // DEBUG TEMPORÁRIO: ajuda a depurar o parser de PDF por banco. Remover depois.
+        console.log('[pdf-debug] texto extraído:\n' + text);
         const result = Importer.parsePDFStatement(text);
         if (!result) {
           showImportError('Não reconheci o layout desse PDF. Por enquanto só oferecemos suporte a extratos do Santander em PDF.');
