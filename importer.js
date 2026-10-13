@@ -317,6 +317,11 @@
       let currentDate = null;
       let pendingDesc = '';
       let openingSeen = false;
+      // Em "PIX ENVIADO"/"PIX RECEBIDO" o valor vem na mesma linha da descrição, e o
+      // nome do favorecido só aparece DEPOIS, numa linha de continuação sem valor —
+      // ao contrário dos outros tipos de lançamento, onde a descrição vem antes do
+      // valor. lastPixIdx guarda o índice do último Pix fechado pra anexar esse nome.
+      let lastPixIdx = -1;
       const items = [];
       let skipped = 0;
 
@@ -332,22 +337,29 @@
         let rest = line;
         if (!pendingDesc) {
           const m = line.match(DATE_PREFIX_RE);
-          if (m) { currentDate = parseDate(`${m[1]}/${year}`); rest = m[2]; }
+          if (m) { currentDate = parseDate(`${m[1]}/${year}`); rest = m[2]; lastPixIdx = -1; }
         }
 
         const tokens = rest.split(/\s+/).filter(Boolean);
         const split = tokens.length ? splitTrailingValues(tokens) : null;
 
         if (!split) {
-          if (rest && !isNumericOnly(rest)) pendingDesc = (pendingDesc ? `${pendingDesc} ` : '') + rest;
+          if (!rest || isNumericOnly(rest)) continue;
+          if (!pendingDesc && lastPixIdx >= 0) {
+            items[lastPixIdx].description = cleanDescription(`${items[lastPixIdx].description} ${rest}`);
+            lastPixIdx = -1; // só uma linha de continuação (o nome do favorecido)
+          } else {
+            pendingDesc = pendingDesc ? `${pendingDesc} ${rest}` : rest;
+          }
           continue;
         }
 
         const description = cleanDescription([pendingDesc, split.desc].filter(Boolean).join(' '));
         pendingDesc = '';
         const signed = parseNumber(split.movimento, 'comma');
-        if (!currentDate || signed === null || signed === 0) { skipped++; continue; }
+        if (!currentDate || signed === null || signed === 0) { skipped++; lastPixIdx = -1; continue; }
         items.push({ date: currentDate, description, signed, externalId: null });
+        lastPixIdx = /^pix (enviado|recebido)\b/i.test(description) ? items.length - 1 : -1;
       }
       return { items, skipped };
     },

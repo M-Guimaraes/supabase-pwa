@@ -180,15 +180,20 @@ test('PDF no formato do Santander (Extrato Consolidado Inteligente): lê a tabel
   const r = I.parsePDFStatement(text);
   assert.ok(r, 'reconheceu o schema do Santander');
   assert.equal(r.skipped, 0);
-  assert.equal(r.items.length, 5);
+  assert.equal(r.items.length, 6);
 
   assert.deepEqual(
     r.items.map((i) => [i.date, i.signed, i.description]),
     [
       ['2026-09-08', 1000, 'RESGATE CDB/RDB'],
       ['2026-09-08', -500, 'PAGAMENTO CARTAO CREDITO BCE 07/09 08:36 CARTAO VISA'],
+      // No PDF o valor do Pix vem na mesma linha de "PIX ENVIADO"/"PIX RECEBIDO", e o
+      // nome do favorecido só aparece na linha seguinte, como continuação.
       ['2026-09-08', -170, 'PIX ENVIADO Fulano de Tal'],
       ['2026-09-18', 300, 'PIX RECEBIDO CICLANO DA SILVA'],
+      // Pix sem nome de favorecido depois: a próxima transação datada não pode ser
+      // engolida como se fosse a continuação do Pix anterior.
+      ['2026-09-20', -50, 'PIX ENVIADO'],
       ['2026-09-30', 100, 'LIQUIDO DE VENCIMENTO'],
     ]
   );
