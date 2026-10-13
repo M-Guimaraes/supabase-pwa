@@ -26,7 +26,7 @@
         }
         if (q.range) out = out.slice(q.range[0], q.range[1] + 1);
         if (q.limit) out = out.slice(0, q.limit);
-        result = { data: out, error: null };
+        result = q.count ? { data: q.head ? null : out, count: apply(rows).length, error: null } : { data: out, error: null };
       } else if (q.op === 'insert' || q.op === 'upsert') {
         const list = Array.isArray(q.payload) ? q.payload : [q.payload];
         const inserted = [];
@@ -46,13 +46,14 @@
         result = { data: null, error: null };
       } else if (q.op === 'delete') {
         db[table] = rows.filter((r) => !apply(rows).includes(r));
+        if (table === 'credit_cards') db.card_invoices = db.card_invoices.filter((i) => db.credit_cards.some((c) => c.id === i.card_id));
         result = { data: null, error: null };
       }
       if (q.singleMode && Array.isArray(result.data)) result = { ...result, data: result.data[0] || null };
       return result;
     };
     const api = {
-      select(cols) { if (q.op !== 'select') q.wantRows = true; return api; },
+      select(cols, opts) { if (q.op !== 'select') q.wantRows = true; else if (opts && opts.count) { q.count = true; q.head = !!opts.head; } return api; },
       insert(p) { q.op = 'insert'; q.payload = p; return api; },
       upsert(p, o) { q.op = 'upsert'; q.payload = p; q.opts = o || {}; return api; },
       update(p) { q.op = 'update'; q.payload = p; return api; },

@@ -3473,14 +3473,91 @@
         ul.append(li);
       }
       body.append(ul);
+      const remove = el('button', 'btn danger spaced', 'Excluir cartão');
+      remove.type = 'button';
+      remove.addEventListener('click', () => deleteCard(card, invoices));
+      body.append(remove);
       group.append(summary, body);
       box.append(group);
     }
   }
 
   const invoiceSheet = $('invoice-sheet');
+  let openInvoice = null;
+
+  // Quantas compras estão ligadas às faturas (contagem no banco, sem baixar as linhas).
+  async function countInvoicePurchases(invoiceIds) {
+    let total = 0;
+    for (let i = 0; i < invoiceIds.length; i += 80) {
+      const { count, error } = await sb
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', state.userId)
+        .in('card_invoice_id', invoiceIds.slice(i, i + 80));
+      if (error) throw error;
+      total += count || 0;
+    }
+    return total;
+  }
+
+  async function deleteInvoicePurchases(invoiceIds) {
+    for (let i = 0; i < invoiceIds.length; i += 80) {
+      const { error } = await sb
+        .from('transactions')
+        .delete()
+        .eq('user_id', state.userId)
+        .in('card_invoice_id', invoiceIds.slice(i, i + 80));
+      if (error) throw error;
+    }
+  }
+
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  // As compras saem primeiro: se algo falhar no meio, nenhuma fica ligada a uma fatura que não existe.
+  async function deleteInvoice(invoice) {
+    if (!requireOnline('excluir a fatura')) return;
+    try {
+      const n = await countInvoicePurchases([invoice.id]);
+      const what = n ? ` e ${plural(n, 'compra', 'compras')} dela` : '';
+      if (!confirm(`Excluir a fatura com vencimento ${fmtDate(invoice.due_on)}${what}? Não dá para desfazer.`)) return;
+      await deleteInvoicePurchases([invoice.id]);
+      const { error } = await sb.from('card_invoices').delete().eq('id', invoice.id);
+      if (error) throw error;
+    } catch (err) {
+      toast(friendlyError(err));
+      return;
+    }
+    invoiceSheet.close();
+    toast('Fatura excluída');
+    await refresh();
+  }
+
+  async function deleteCard(card, invoices) {
+    if (!requireOnline('excluir o cartão')) return;
+    const ids = invoices.map((i) => i.id);
+    const name = card.last4 ? `${card.name} ····${card.last4}` : card.name;
+    try {
+      const n = ids.length ? await countInvoicePurchases(ids) : 0;
+      const parts = [];
+      if (ids.length) parts.push(plural(ids.length, 'fatura', 'faturas'));
+      if (n) parts.push(plural(n, 'compra', 'compras'));
+      const what = parts.length ? ` com ${parts.join(' e ')}` : '';
+      if (!confirm(`Excluir o cartão ${name}${what}? Não dá para desfazer.`)) return;
+      if (ids.length) await deleteInvoicePurchases(ids);
+      const { error } = await sb.from('credit_cards').delete().eq('id', card.id);
+      if (error) throw error;
+    } catch (err) {
+      toast(friendlyError(err));
+      return;
+    }
+    toast('Cartão excluído');
+    await refresh();
+  }
+
+  $('invoice-delete').addEventListener('click', () => { if (openInvoice) deleteInvoice(openInvoice); });
 
   async function openInvoiceSheet(invoice, card) {
+    openInvoice = invoice;
     $('invoice-title').textContent = card.last4 ? `Fatura — ${card.name} ····${card.last4}` : `Fatura — ${card.name}`;
     const status = invoice.paid_on
       ? `Paga em ${fmtDate(invoice.paid_on)} (${brl.format(invoice.paid_amount)})`

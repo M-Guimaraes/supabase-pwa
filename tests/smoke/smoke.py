@@ -187,6 +187,39 @@ with sync_playwright() as p:
     check(page.is_disabled('#card-import-submit'), 'importar fatura começa desabilitado, sem arquivo')
     page.click('#card-import-cancel')
     check(page.is_hidden('#card-import-sheet[open]'), 'cancelar fecha a folha de importar fatura')
+    # excluir fatura e cartão (as compras saem junto)
+    page.evaluate("""
+      __db.credit_cards.push({id:'card2', name:'SEGUNDO CARTAO', last4:'9999', user_id:'u1', created_at:'2026-01-02'});
+      __db.card_invoices.push(
+        {id:'inv2', card_id:'card2', period_start:'2026-10-01', period_end:'2026-10-31', due_on:'2026-11-07', total:90, min_payment:null, paid_on:null, paid_amount:null, user_id:'u1', created_at:'2026-01-02'},
+        {id:'inv3', card_id:'card2', period_start:'2026-11-01', period_end:'2026-11-30', due_on:'2026-12-07', total:40, min_payment:null, paid_on:null, paid_amount:null, user_id:'u1', created_at:'2026-01-03'});
+      __db.transactions.push(
+        {id:'c2a', type:'expense', amount:50, description:'COMPRA A', category_id:null, occurred_on:'2026-10-10', card_invoice_id:'inv2', user_id:'u1', created_at:'c'},
+        {id:'c2b', type:'expense', amount:40, description:'COMPRA B', category_id:null, occurred_on:'2026-10-11', card_invoice_id:'inv2', user_id:'u1', created_at:'c'},
+        {id:'c2c', type:'expense', amount:40, description:'COMPRA C', category_id:null, occurred_on:'2026-11-11', card_invoice_id:'inv3', user_id:'u1', created_at:'c'});
+      window.dispatchEvent(new Event('online'));
+    """)
+    page.wait_for_timeout(700)
+    page.click('[data-tab=cards]')
+    check(page.locator('#cards-list details').count() == 2, 'dois cartões na lista')
+    msgs = []
+    page.on('dialog', lambda d: (msgs.append(d.message), d.accept()))
+    page.locator('#cards-list details').nth(1).locator('summary').click()
+    page.locator('#cards-list details').nth(1).locator('.cat-list button').first.click()
+    page.wait_for_selector('#invoice-sheet[open]')
+    check(page.is_visible('#invoice-delete'), 'folha da fatura tem o botão Excluir fatura')
+    page.click('#invoice-delete'); page.wait_for_timeout(600)
+    check(msgs and '1 compra dela' in msgs[-1] and '07/12/2026' in msgs[-1], 'confirmação cita vencimento e compras (a fatura mais nova vem primeiro): %s' % (msgs[-1:] ,))
+    ids = lambda t: [r['id'] for r in page.evaluate('__db.' + t)]
+    check('inv3' not in ids('card_invoices') and 'inv2' in ids('card_invoices'), 'excluiu só a fatura escolhida')
+    check('c2c' not in ids('transactions') and 'c2a' in ids('transactions') and 'c2b' in ids('transactions'), 'compras da fatura saíram junto, as outras ficam')
+    check(not page.evaluate("document.getElementById('invoice-sheet').open"), 'folha fecha depois de excluir a fatura')
+    page.locator('#cards-list details').nth(1).evaluate('d => d.open = true')
+    page.locator('#cards-list details').nth(1).get_by_text('Excluir cartão').click(); page.wait_for_timeout(600)
+    check('1 fatura' in msgs[-1] and '2 compras' in msgs[-1] and '9999' in msgs[-1], 'confirmação do cartão cita faturas e compras: %s' % msgs[-1])
+    check('card2' not in ids('credit_cards') and 'card1' in ids('credit_cards'), 'cartão excluído, o outro fica')
+    check('inv2' not in ids('card_invoices') and 'c2a' not in ids('transactions') and 'c2b' not in ids('transactions') and 'cardtx1' in ids('transactions'), 'faturas e compras do cartão saíram; o resto fica')
+    check(page.locator('#cards-list details').count() == 1 and 'SEGUNDO' not in page.inner_text('#cards-list'), 'lista mostra só o cartão que sobrou')
     page.click('[data-tab=summary]')
     # regras de categoria
     go_settings(page)
