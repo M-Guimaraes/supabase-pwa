@@ -455,6 +455,23 @@ main { padding: 0 1rem; }
 }
 .day h3::first-letter { text-transform: uppercase; }
 
+.tx-toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
+.tx-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.tx-bulk-all { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+.tx-bulk-all input { width: 1.1rem; height: 1.1rem; }
+.tx-bulk-actions { display: flex; gap: 0.5rem; }
+
 .tx {
   display: flex;
   align-items: center;
@@ -471,6 +488,8 @@ main { padding: 0 1rem; }
 }
 .tx:last-child { border-bottom: 0; }
 .tx:active { background: var(--tint); }
+.tx .check { flex: none; width: 1.15rem; height: 1.15rem; }
+.tx.selected { background: var(--tint); }
 .tx .dot { flex: none; width: 3px; height: 30px; border-radius: 2px; }
 .tx.income .dot { background: var(--pos); }
 .tx.expense .dot { background: var(--line-strong); }

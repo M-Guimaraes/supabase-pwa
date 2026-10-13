@@ -210,6 +210,19 @@
           </div>
           <p id="period-totals" class="period-totals"></p>
         </div>
+        <div class="tx-toolbar">
+          <button id="tx-select-toggle" class="btn link small" type="button">Selecionar</button>
+        </div>
+        <div id="tx-bulk-bar" class="tx-bulk-bar" hidden>
+          <label class="tx-bulk-all">
+            <input id="tx-select-all" type="checkbox">
+            <span id="tx-bulk-count">Nenhum selecionado</span>
+          </label>
+          <div class="tx-bulk-actions">
+            <button id="tx-bulk-cancel" class="btn small" type="button">Cancelar</button>
+            <button id="tx-bulk-delete" class="btn small danger" type="button" disabled>Excluir</button>
+          </div>
+        </div>
         <div id="tx-groups"></div>
         <p id="tx-empty" class="empty" hidden>Nenhum lançamento neste período. Toque em + para adicionar.</p>
       </section>

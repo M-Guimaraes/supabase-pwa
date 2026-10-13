@@ -28,6 +28,8 @@
     listMode: 'day',
     listDate: new Date(),
     listPartial: false,
+    selecting: false,
+    selected: new Set(),
     recurring: [],
     budgets: [],
     bills: [],
@@ -1107,6 +1109,12 @@
       ? 'Nenhum lançamento hoje. Toque em + para adicionar.'
       : 'Nenhum lançamento neste período. Toque em + para adicionar.';
 
+    // Lançamentos ainda não enviados (offline) não têm id salvo no banco: não dá pra
+    // selecioná-los. Tira do conjunto qualquer id selecionado que não existe mais aqui.
+    const selectable = rows.filter((t) => !t.pending);
+    const selectableIds = new Set(selectable.map((t) => t.id));
+    for (const id of state.selected) if (!selectableIds.has(id)) state.selected.delete(id);
+
     const byDay = new Map();
     for (const t of rows) {
       if (!byDay.has(t.occurred_on)) byDay.set(t.occurred_on, []);
@@ -1117,7 +1125,8 @@
       const group = el('section', 'day');
       group.append(el('h3', '', dayFmt.format(parseYmd(day))));
       for (const t of items) {
-        const btn = el('button', `tx ${t.type}`);
+        const selected = state.selecting && state.selected.has(t.id);
+        const btn = el('button', `tx ${t.type}${selected ? ' selected' : ''}`);
         btn.type = 'button';
         const info = el('span', 'info');
         info.append(
@@ -1125,10 +1134,24 @@
           el('span', 'sub', categoryName(t.category_id))
         );
         const sign = t.type === 'income' ? '+ ' : '− ';
+        if (state.selecting && !t.pending) {
+          const check = document.createElement('input');
+          check.type = 'checkbox';
+          check.className = 'check';
+          check.checked = selected;
+          check.tabIndex = -1;
+          check.setAttribute('aria-hidden', 'true');
+          btn.append(check);
+        }
         btn.append(el('span', 'dot'), info, el('span', 'amount', sign + brl.format(t.amount)));
         if (t.pending) {
           btn.classList.add('pending');
           btn.addEventListener('click', () => toast('Este lançamento ainda não foi enviado. Ele sobe sozinho quando a internet voltar.'));
+        } else if (state.selecting) {
+          btn.addEventListener('click', () => {
+            if (state.selected.has(t.id)) state.selected.delete(t.id); else state.selected.add(t.id);
+            renderList();
+          });
         } else {
           btn.addEventListener('click', () => openSheet(t));
         }
@@ -1136,7 +1159,67 @@
       }
       box.append(group);
     }
+
+    renderBulkBar(selectable.length);
   }
+
+  function renderBulkBar(selectableCount) {
+    $('tx-select-toggle').hidden = state.selecting;
+    $('tx-bulk-bar').hidden = !state.selecting;
+    if (!state.selecting) return;
+    const n = state.selected.size;
+    $('tx-bulk-count').textContent = n === 0 ? 'Nenhum selecionado' : n === 1 ? '1 selecionado' : `${n} selecionados`;
+    $('tx-select-all').checked = selectableCount > 0 && n === selectableCount;
+    $('tx-select-all').disabled = selectableCount === 0;
+    $('tx-bulk-delete').disabled = n === 0;
+  }
+
+  function exitSelectMode() {
+    state.selecting = false;
+    state.selected = new Set();
+  }
+
+  $('tx-select-toggle').addEventListener('click', () => {
+    state.selecting = true;
+    state.selected = new Set();
+    renderList();
+  });
+
+  $('tx-bulk-cancel').addEventListener('click', () => {
+    exitSelectMode();
+    renderList();
+  });
+
+  $('tx-select-all').addEventListener('change', (e) => {
+    if (e.target.checked) {
+      state.selected = new Set(state.listTx.filter((t) => !t.pending).map((t) => t.id));
+    } else {
+      state.selected = new Set();
+    }
+    renderList();
+  });
+
+  $('tx-bulk-delete').addEventListener('click', async () => {
+    const ids = [...state.selected];
+    if (ids.length === 0) return;
+    if (!navigator.onLine) { toast('Sem conexão: excluir precisa de internet.'); return; }
+    const msg = ids.length === 1 ? 'Excluir 1 lançamento?' : `Excluir ${ids.length} lançamentos?`;
+    if (!confirm(msg)) return;
+    const button = $('tx-bulk-delete');
+    button.disabled = true;
+    try {
+      for (let i = 0; i < ids.length; i += 80) {
+        const { error } = await sb.from('transactions').delete().in('id', ids.slice(i, i + 80));
+        if (error) throw error;
+      }
+      toast(ids.length === 1 ? '1 lançamento excluído' : `${ids.length} lançamentos excluídos`);
+      exitSelectMode();
+      await refresh();
+    } catch (err) {
+      toast(friendlyError(err));
+      button.disabled = state.selected.size === 0;
+    }
+  });
 
   function renderCategories() {
     for (const type of ['expense', 'income']) {
@@ -1335,6 +1418,7 @@
   /* ---------- Navegação ---------- */
 
   function switchTab(name) {
+    if (name !== 'list' && state.selecting) { exitSelectMode(); renderList(); }
     document.querySelectorAll('.view').forEach((v) => { v.hidden = v.dataset.view !== name; });
     document.querySelectorAll('.tab').forEach((t) => {
       if (t.dataset.tab === name) t.setAttribute('aria-current', 'page');
