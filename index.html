@@ -139,6 +139,20 @@
           <ul id="bills-due-list" class="cat-list"></ul>
         </section>
 
+        <section id="household-panel" class="panel" hidden>
+          <h3 class="panel-title">Casal</h3>
+          <p id="household-balance" class="household-balance"></p>
+          <p id="household-note" class="hint-line" hidden></p>
+          <dl class="household-totals">
+            <div><dt>Gastos da casa no mês</dt><dd id="hh-total">R$ 0,00</dd></div>
+            <div><dt id="hh-me-label">Você pagou</dt><dd id="hh-paid-me">R$ 0,00</dd></div>
+            <div><dt id="hh-partner-label">Parceiro pagou</dt><dd id="hh-paid-partner">R$ 0,00</dd></div>
+          </dl>
+          <ul id="household-list" class="cat-list"></ul>
+          <p id="household-empty" class="empty" hidden>Nenhuma despesa compartilhada neste mês. Ao lançar uma despesa, marque "Compartilhar".</p>
+          <button id="household-settle" class="btn" type="button" hidden>Acertar contas</button>
+        </section>
+
         <section id="budget-progress" class="panel" hidden>
           <h3 class="panel-title">Orçamento do mês</h3>
           <ul id="budget-list" class="breakdown budget"></ul>
@@ -245,6 +259,27 @@
           </div>
           <button id="logout" class="btn small" type="button">Sair</button>
         </div>
+
+        <details class="group" id="household-group">
+          <summary><span class="group-title">Casal</span><span id="household-hint" class="group-hint">Gastos compartilhados</span></summary>
+          <div class="group-body">
+            <div id="household-none">
+              <p class="account-note">Dividam as despesas da casa. Cada um mantém os lançamentos privados; só o que for marcado como compartilhado aparece para o outro.</p>
+              <button id="household-create" class="btn" type="button">Criar casal</button>
+              <button id="household-join" class="btn spaced" type="button">Entrar com código</button>
+            </div>
+            <div id="household-have" hidden>
+              <ul id="household-members" class="cat-list"></ul>
+              <div id="household-invite" hidden>
+                <p class="account-note">Passe este código ao seu parceiro. Ele vale por 7 dias e só entra uma pessoa.</p>
+                <p id="household-code" class="invite-code" aria-live="polite"></p>
+                <button id="household-copy" class="btn small" type="button">Copiar código</button>
+                <button id="household-newcode" class="btn small" type="button">Gerar outro código</button>
+              </div>
+              <button id="household-leave" class="btn danger spaced" type="button">Sair do casal</button>
+            </div>
+          </div>
+        </details>
 
         <details class="group">
           <summary><span class="group-title">Orçamento mensal</span><span class="group-hint">Limite por categoria</span></summary>
@@ -425,6 +460,16 @@
       <label for="tx-date">Data</label>
       <input id="tx-date" type="date" required>
 
+      <div id="tx-share-box" class="share-box" hidden>
+        <label class="check"><input type="checkbox" id="tx-share"> <span id="tx-share-label">Compartilhar com o casal</span></label>
+        <div id="tx-share-split" class="share-split" hidden>
+          <label for="tx-split">Divisão</label>
+          <select id="tx-split"></select>
+          <input id="tx-split-custom" type="text" inputmode="decimal" placeholder="Sua parte em %, ex.: 65" autocomplete="off" hidden>
+          <p id="tx-split-hint" class="hint-line"></p>
+        </div>
+      </div>
+
       <p id="tx-error" class="form-error" role="alert" hidden></p>
 
       <div class="sheet-actions">
@@ -461,6 +506,16 @@
       <label for="rec-start">Começa em</label>
       <input id="rec-start" type="month" required>
 
+      <div id="rec-share-box" class="share-box" hidden>
+        <label class="check"><input type="checkbox" id="rec-share"> <span id="rec-share-label">Compartilhar com o casal</span></label>
+        <div id="rec-share-split" class="share-split" hidden>
+          <label for="rec-split">Divisão</label>
+          <select id="rec-split"></select>
+          <input id="rec-split-custom" type="text" inputmode="decimal" placeholder="Sua parte em %, ex.: 65" autocomplete="off" hidden>
+          <p id="rec-split-hint" class="hint-line"></p>
+        </div>
+      </div>
+
       <label id="rec-active-row" class="check" hidden>
         <input type="checkbox" id="rec-active" checked> Ativo (desmarque para pausar)
       </label>
@@ -472,6 +527,45 @@
         <button id="rec-delete" class="btn danger" type="button" hidden>Excluir</button>
         <button id="rec-cancel" class="btn" type="button">Cancelar</button>
         <button id="rec-save" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="household-sheet" class="sheet" aria-labelledby="household-title">
+    <form id="household-form" method="dialog" novalidate>
+      <h3 id="household-title">Criar casal</h3>
+      <p id="household-form-note" class="account-note"></p>
+
+      <div id="household-code-row" hidden>
+        <label for="household-code-input">Código do convite</label>
+        <input id="household-code-input" type="text" maxlength="12" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-2345">
+      </div>
+
+      <label for="household-name">Como você quer ser chamado?</label>
+      <input id="household-name" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: Ana" required>
+
+      <p id="household-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="household-cancel" class="btn" type="button">Cancelar</button>
+        <button id="household-save" class="btn primary" type="submit">Continuar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settle-sheet" class="sheet" aria-labelledby="settle-title">
+    <form id="settle-form" method="dialog" novalidate>
+      <h3 id="settle-title">Acertar contas</h3>
+      <p id="settle-note" class="account-note"></p>
+
+      <label for="settle-amount">Valor acertado</label>
+      <input id="settle-amount" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+
+      <p id="settle-error" class="form-error" role="alert" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="settle-cancel" class="btn" type="button">Cancelar</button>
+        <button id="settle-save" class="btn primary" type="submit">Registrar acerto</button>
       </div>
     </form>
   </dialog>
@@ -718,6 +812,7 @@
   <script src="classifier.js"></script>
   <script src="period.js"></script>
   <script src="trend.js"></script>
+  <script src="household.js"></script>
   <script src="offline.js"></script>
   <script src="app.js"></script>
 </body>

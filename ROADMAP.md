@@ -9,7 +9,7 @@ Estados possíveis: pendente, em andamento, concluído.
 | 1A | Importar extrato (CSV e OFX) | 1 | concluído |
 | 4 | Gastos recorrentes e assinaturas | 2 | implementado, falta testar no celular |
 | 3 | Orçamento por categoria, alertas e lembretes de contas | 3 | implementado, falta testar no celular |
-| 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV, metas e gráfico de evolução (6 meses) implementados, falta testar; offline implementado (falta testar no celular); casais em segundo plano |
+| 7 | Itens menores: exportar CSV, metas, offline e casais | 4 | em andamento: CSV, metas e gráfico de evolução (6 meses) implementados, falta testar; offline implementado (falta testar no celular); casais implementado, falta aplicar a migration e testar no celular |
 | 2 | Menos digitação manual | 5 | implementado, falta testar no celular |
 | 5 | Segurança e controle dos dados | 6 | implementado no app; falta aplicar a migration das duas etapas e ligar a proteção de senhas vazadas |
 | 6 | Preço baixo e simplicidade | 7 | parcial: onboarding e telas enxutas feitos; falta conferir limites do plano e testar com pessoas |
@@ -51,14 +51,21 @@ Pronto quando: dá para ver quanto resta de cada categoria no mês.
 
 ## 7. Itens menores: CSV, metas, offline e casais
 
-Status: em andamento. Exportar CSV e metas implementados em 11/10/2026, faltam testar no celular. Gráfico de evolução dos últimos 6 meses implementado em 11/10/2026. Modo offline implementado em 11/10/2026 (leitura da última cópia + fila de lançamentos novos; editar/excluir exigem internet), falta testar no celular. Casais em segundo plano.
+Status: em andamento. Exportar CSV e metas implementados em 11/10/2026, faltam testar no celular. Gráfico de evolução dos últimos 6 meses implementado em 11/10/2026. Modo offline implementado em 11/10/2026 (leitura da última cópia + fila de lançamentos novos; editar/excluir exigem internet), falta testar no celular. Casais implementado em 13/10/2026, falta aplicar a migration e testar no celular.
 
 Feito: exportação em CSV (`;`, vírgula decimal, UTF-8 com BOM, despesas negativas, proteção contra fórmulas em planilhas) do mês ou de tudo; tabela `goals` com RLS, tela em Ajustes com barra de progresso, "guardar mais" e valor sugerido por mês até o prazo. Testes em `tests/exporter.test.js`.
 
 - **Exportar CSV:** baixar os lançamentos (do mês ou todos). A importação está no tópico 1A.
 - **Metas:** tabela `goals` (nome, valor alvo, prazo, valor guardado) com barra de progresso.
 - **Offline:** guardar lançamentos feitos sem internet numa fila local (IndexedDB) e enviar quando a conexão voltar. Hoje o app abre offline, mas os dados precisam de internet.
-- **Casais:** grupo familiar com membros e RLS compartilhado. É o mais complexo e exige desenho próprio, por isso fica por último.
+- **Casais:** implementado em 13/10/2026 (falta aplicar a migration no Supabase e testar no celular).
+  - Dois usuários formam um casal por código de convite (8 caracteres, vale 7 dias), em Ajustes → Casal. Cada um segue com os lançamentos privados; só o que for marcado "Compartilhar" aparece para o outro.
+  - A divisão é escolhida em cada despesa (50/50, 60/40, 70/30, tudo do parceiro ou % livre) e vale também para lançamentos fixos. `payer_share` é a parte de quem pagou; o parceiro deve o resto.
+  - O Resumo ganha o painel "Casal": quem deve a quem (saldo corrido), total da casa no mês, quanto cada um pagou e as despesas compartilhadas. "Acertar contas" registra o pagamento em `household_settlements` sem criar despesa; só quem deve registra.
+  - O Resumo pessoal continua mostrando o valor cheio que cada um pagou (fluxo de caixa). O parceiro só lê (nunca edita) o que é do outro e só vê as categorias usadas em lançamentos compartilhados.
+  - Quem sai do casal (ou apaga a conta) encerra o compartilhamento dos dois: os lançamentos voltam a ser privados e o histórico de acertos é apagado. Nada é excluído.
+  - Todas as leituras pessoais passaram a filtrar por `user_id`, porque o RLS agora também devolve linhas compartilhadas do parceiro.
+  - Fica de fora da v1: contas a pagar e importação compartilhadas, orçamento do casal, mais de 2 pessoas. Lógica em `household.js`, testes em `tests/household.test.js`.
 
 Pronto quando: um item por vez, cada um testado no celular.
 

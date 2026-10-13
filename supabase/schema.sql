@@ -346,3 +346,317 @@ create policy "require_aal2_if_enrolled" on public.card_invoices
 alter table public.transactions
   add column card_invoice_id uuid references public.card_invoices (id) on delete set null;
 create index transactions_card_invoice_idx on public.transactions (card_invoice_id);
+
+-- ---------------------------------------------------------------------------
+-- Casal: dois usuários acompanham gastos compartilhados num lugar só.
+-- Cada um segue com os próprios lançamentos privados; só os marcados como
+-- compartilhados (household_id + payer_share) ficam visíveis para o parceiro.
+-- payer_share = percentual do valor que fica com quem pagou; o parceiro deve o resto.
+-- ---------------------------------------------------------------------------
+
+create table public.households (
+  id uuid primary key default gen_random_uuid(),
+  created_by uuid default auth.uid() references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table public.household_members (
+  household_id uuid not null references public.households (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  display_name text not null check (char_length(display_name) between 1 and 40),
+  joined_at timestamptz not null default now(),
+  primary key (household_id, user_id),
+  unique (user_id)
+);
+
+-- Código de convite de 8 caracteres (sem 0/O/1/I), válido por 7 dias. Só as funções
+-- abaixo criam e usam convites; o app não escreve direto nesta tabela.
+create table public.household_invites (
+  code text primary key check (code ~ '^[A-HJ-NP-Z2-9]{8}$'),
+  household_id uuid not null references public.households (id) on delete cascade,
+  created_by uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  expires_at timestamptz not null default now() + interval '7 days',
+  used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index household_invites_household_id_idx on public.household_invites (household_id);
+create index household_invites_created_by_idx on public.household_invites (created_by);
+
+-- "Acertei R$ X com o parceiro". Não vira despesa: só abate o saldo entre os dois.
+create table public.household_settlements (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households (id) on delete cascade,
+  from_user uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  to_user uuid not null references auth.users (id) on delete cascade,
+  amount numeric(12, 2) not null check (amount > 0),
+  settled_on date not null default current_date,
+  created_at timestamptz not null default now(),
+  check (from_user <> to_user)
+);
+create index household_settlements_household_id_idx on public.household_settlements (household_id);
+create index household_settlements_from_user_idx on public.household_settlements (from_user);
+create index household_settlements_to_user_idx on public.household_settlements (to_user);
+create index households_created_by_idx on public.households (created_by);
+
+alter table public.transactions
+  add column household_id uuid references public.households (id) on delete set null,
+  add column payer_share numeric(5, 2) check (payer_share between 0 and 100);
+alter table public.recurring_transactions
+  add column household_id uuid references public.households (id) on delete set null,
+  add column payer_share numeric(5, 2) check (payer_share between 0 and 100);
+
+create index transactions_household_idx on public.transactions (household_id, occurred_on desc)
+  where household_id is not null;
+create index recurring_transactions_household_idx on public.recurring_transactions (household_id)
+  where household_id is not null;
+
+-- Casal de quem está logado. security definer para as regras de RLS não se
+-- referenciarem em círculo (household_members consulta a si mesma).
+create or replace function private.my_household_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select household_id from public.household_members where user_id = (select auth.uid())
+$$;
+
+revoke all on function private.my_household_id() from public, anon;
+grant execute on function private.my_household_id() to authenticated;
+
+alter table public.households enable row level security;
+alter table public.household_members enable row level security;
+alter table public.household_invites enable row level security;
+alter table public.household_settlements enable row level security;
+
+create policy "households_select_member" on public.households
+  for select to authenticated using (id = (select private.my_household_id()));
+create policy "household_members_select_member" on public.household_members
+  for select to authenticated using (household_id = (select private.my_household_id()));
+-- O membro vê o convite ainda válido do próprio casal, para mostrar o código em Ajustes.
+create policy "household_invites_select_member" on public.household_invites
+  for select to authenticated
+  using (household_id = (select private.my_household_id()) and used_at is null and expires_at > now());
+create policy "household_settlements_select_member" on public.household_settlements
+  for select to authenticated using (household_id = (select private.my_household_id()));
+create policy "household_settlements_insert_own" on public.household_settlements
+  for insert to authenticated
+  with check (
+    from_user = (select auth.uid())
+    and to_user <> from_user
+    and household_id = (select private.my_household_id())
+    and exists (
+      select 1 from public.household_members m
+      where m.household_id = household_settlements.household_id and m.user_id = household_settlements.to_user
+    )
+  );
+
+create policy "require_aal2_if_enrolled" on public.households
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.household_members
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.household_invites
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+create policy "require_aal2_if_enrolled" on public.household_settlements
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+
+-- O parceiro lê (só lê) os lançamentos compartilhados do casal. Editar e excluir
+-- continuam só para o dono, pelas regras "own" de antes.
+create policy "transactions_select_household" on public.transactions
+  for select to authenticated
+  using (
+    household_id is not null
+    and payer_share is not null
+    and household_id = (select private.my_household_id())
+  );
+
+-- Ninguém marca um lançamento como compartilhado com um casal que não é o seu.
+create policy "household_must_be_mine_insert" on public.transactions
+  as restrictive for insert to authenticated
+  with check (household_id is null or household_id = (select private.my_household_id()));
+create policy "household_must_be_mine_update" on public.transactions
+  as restrictive for update to authenticated
+  using (true)
+  with check (household_id is null or household_id = (select private.my_household_id()));
+create policy "household_must_be_mine_insert" on public.recurring_transactions
+  as restrictive for insert to authenticated
+  with check (household_id is null or household_id = (select private.my_household_id()));
+create policy "household_must_be_mine_update" on public.recurring_transactions
+  as restrictive for update to authenticated
+  using (true)
+  with check (household_id is null or household_id = (select private.my_household_id()));
+
+-- O parceiro só enxerga as categorias que aparecem em lançamentos compartilhados.
+create policy "categories_select_shared" on public.categories
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.transactions t
+      where t.category_id = categories.id
+        and t.household_id is not null
+        and t.household_id = (select private.my_household_id())
+    )
+  );
+
+-- Quando alguém sai do casal (ou apaga a conta), o compartilhamento acaba para os dois:
+-- os lançamentos voltam a ser privados e o histórico de acertos some. Sem isso, um
+-- parceiro novo herdaria dívidas de uma divisão que ele não fez.
+create or replace function private.on_household_member_removed()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.transactions set household_id = null, payer_share = null
+    where household_id = old.household_id;
+  update public.recurring_transactions set household_id = null, payer_share = null
+    where household_id = old.household_id;
+  delete from public.household_settlements where household_id = old.household_id;
+  if not exists (select 1 from public.household_members where household_id = old.household_id) then
+    delete from public.households where id = old.household_id;
+  end if;
+  return old;
+end;
+$$;
+
+revoke all on function private.on_household_member_removed() from public, anon, authenticated;
+
+create trigger on_household_member_removed
+  after delete on public.household_members
+  for each row execute function private.on_household_member_removed();
+
+-- Código aleatório de 8 caracteres; os bytes vêm de gen_random_uuid() (aleatório forte).
+create or replace function private.gen_invite_code()
+returns text
+language plpgsql
+volatile
+set search_path = ''
+as $$
+declare
+  alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  raw bytea := decode(replace(gen_random_uuid()::text, '-', ''), 'hex');
+  code text := '';
+  i int;
+begin
+  for i in 0..5 loop
+    code := code || substr(alphabet, (get_byte(raw, i) & 31) + 1, 1);
+  end loop;
+  code := code
+    || substr(alphabet, (get_byte(raw, 9) & 31) + 1, 1)
+    || substr(alphabet, (get_byte(raw, 10) & 31) + 1, 1);
+  return code;
+end;
+$$;
+
+revoke all on function private.gen_invite_code() from public, anon, authenticated;
+
+create or replace function public.create_household(p_name text)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_name text := trim(coalesce(p_name, ''));
+  v_hid uuid;
+  v_code text;
+begin
+  if v_uid is null then raise exception 'not authenticated'; end if;
+  if not private.aal_ok() then raise exception 'mfa required'; end if;
+  if char_length(v_name) not between 1 and 40 then raise exception 'invalid name'; end if;
+  if exists (select 1 from public.household_members where user_id = v_uid) then
+    raise exception 'already in household';
+  end if;
+  insert into public.households (created_by) values (v_uid) returning id into v_hid;
+  insert into public.household_members (household_id, user_id, display_name) values (v_hid, v_uid, v_name);
+  v_code := private.gen_invite_code();
+  insert into public.household_invites (code, household_id, created_by) values (v_code, v_hid, v_uid);
+  return v_code;
+end;
+$$;
+
+-- Novo código enquanto falta o parceiro; os códigos antigos ainda não usados deixam de valer.
+create or replace function public.new_household_invite()
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_hid uuid;
+  v_code text;
+begin
+  if v_uid is null then raise exception 'not authenticated'; end if;
+  if not private.aal_ok() then raise exception 'mfa required'; end if;
+  select household_id into v_hid from public.household_members where user_id = v_uid;
+  if v_hid is null then raise exception 'not in household'; end if;
+  if (select count(*) from public.household_members where household_id = v_hid) >= 2 then
+    raise exception 'household full';
+  end if;
+  update public.household_invites set used_at = now() where household_id = v_hid and used_at is null;
+  v_code := private.gen_invite_code();
+  insert into public.household_invites (code, household_id, created_by) values (v_code, v_hid, v_uid);
+  return v_code;
+end;
+$$;
+
+create or replace function public.join_household(p_code text, p_name text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_name text := trim(coalesce(p_name, ''));
+  v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  v_inv public.household_invites;
+begin
+  if v_uid is null then raise exception 'not authenticated'; end if;
+  if not private.aal_ok() then raise exception 'mfa required'; end if;
+  if char_length(v_name) not between 1 and 40 then raise exception 'invalid name'; end if;
+  if exists (select 1 from public.household_members where user_id = v_uid) then
+    raise exception 'already in household';
+  end if;
+  select * into v_inv from public.household_invites where code = v_code for update;
+  if not found or v_inv.used_at is not null or v_inv.expires_at < now() then
+    raise exception 'invalid invite';
+  end if;
+  if (select count(*) from public.household_members where household_id = v_inv.household_id) >= 2 then
+    raise exception 'household full';
+  end if;
+  insert into public.household_members (household_id, user_id, display_name)
+    values (v_inv.household_id, v_uid, v_name);
+  update public.household_invites set used_at = now() where code = v_code;
+end;
+$$;
+
+create or replace function public.leave_household()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if not private.aal_ok() then raise exception 'mfa required'; end if;
+  delete from public.household_members where user_id = auth.uid();
+end;
+$$;
+
+revoke all on function public.create_household(text) from public, anon;
+revoke all on function public.new_household_invite() from public, anon;
+revoke all on function public.join_household(text, text) from public, anon;
+revoke all on function public.leave_household() from public, anon;
+grant execute on function public.create_household(text) to authenticated;
+grant execute on function public.new_household_invite() to authenticated;
+grant execute on function public.join_household(text, text) to authenticated;
+grant execute on function public.leave_household() to authenticated;

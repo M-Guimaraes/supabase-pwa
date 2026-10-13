@@ -23,6 +23,11 @@
     userId: undefined, // undefined = ainda não verificado
     month: firstOfMonth(new Date()),
     categories: [],
+    partnerCategories: new Map(),
+    household: null, // { id, myName, partner: { user_id, name } | null }
+    householdInvite: null,
+    shared: [],
+    settlements: [],
     transactions: [],
     listTx: [],
     listMode: 'day',
@@ -116,6 +121,10 @@
     if (/current.?password|incorrect.*password/i.test(msg)) return 'Senha atual incorreta.';
     if (/different from the old/i.test(msg)) return 'A nova senha precisa ser diferente da atual.';
     if (/rate limit/i.test(msg)) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
+    if (/household/i.test(msg) && /does not exist|schema cache|could not find/i.test(msg)) return 'O casal ainda não foi ativado no banco. Aplique o SQL do casal no Supabase.';
+    if (/invalid invite/i.test(msg)) return 'Código inválido, já usado ou vencido. Peça um novo ao seu parceiro.';
+    if (/household full/i.test(msg)) return 'Esse casal já tem duas pessoas.';
+    if (/already in household/i.test(msg)) return 'Você já está em um casal.';
     if (/category_rules|relation .* does not exist|schema cache/i.test(msg)) return 'As regras ainda não foram ativadas no banco. Aplique o SQL de regras no Supabase.';
     if (/category_rules_user_id_pattern_key|duplicate key/i.test(msg)) return 'Já existe uma regra para esse texto.';
     if (/failed to fetch|network/i.test(msg)) return 'Sem conexão. Verifique a internet e tente de novo.';
@@ -305,13 +314,16 @@
 
   /* ---------- Dados ---------- */
 
+  // Com o casal, o RLS também devolve linhas do parceiro (lançamentos compartilhados e as
+  // categorias deles). Toda leitura dos dados pessoais filtra por user_id para não misturar.
   async function loadCategories() {
     const { data, error } = await sb
       .from('categories')
-      .select('id, name, type')
+      .select('id, user_id, name, type')
       .order('name');
     if (error) throw error;
-    state.categories = data;
+    state.categories = data.filter((c) => c.user_id === state.userId).map(({ id, name, type }) => ({ id, name, type }));
+    state.partnerCategories = new Map(data.filter((c) => c.user_id !== state.userId).map((c) => [c.id, c.name]));
   }
 
   async function loadTransactions() {
@@ -319,7 +331,8 @@
     const next = ymd(new Date(state.month.getFullYear(), state.month.getMonth() + 1, 1));
     const { data, error } = await sb
       .from('transactions')
-      .select('id, type, amount, description, occurred_on, category_id')
+      .select('id, type, amount, description, occurred_on, category_id, household_id, payer_share')
+      .eq('user_id', state.userId)
       .gte('occurred_on', start)
       .lt('occurred_on', next)
       .order('occurred_on', { ascending: false })
@@ -361,7 +374,8 @@
     for (let from = 0; from < 20000; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('id, type, amount, description, occurred_on, category_id, created_at')
+        .select('id, type, amount, description, occurred_on, category_id, created_at, household_id, payer_share')
+        .eq('user_id', state.userId)
         .gte('occurred_on', start)
         .lt('occurred_on', next)
         .order('occurred_on', { ascending: false })
@@ -430,6 +444,57 @@
     state.goals = data.map((g) => ({ ...g, target_amount: Number(g.target_amount), saved_amount: Number(g.saved_amount) }));
   }
 
+  // Separado do resto: sem a migration do casal o app segue funcionando como antes.
+  async function loadHousehold() {
+    const reset = () => {
+      state.household = null;
+      state.householdInvite = null;
+      state.shared = [];
+      state.settlements = [];
+    };
+    const { data: members, error } = await sb.from('household_members').select('household_id, user_id, display_name');
+    if (error) {
+      if (Offline.isNetworkError(error)) throw error;
+      reset();
+      return;
+    }
+    const me = members.find((m) => m.user_id === state.userId);
+    if (!me) { reset(); return; }
+    const other = members.find((m) => m.user_id !== state.userId);
+    const id = me.household_id;
+    try {
+      const shared = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data, error: txError } = await sb
+          .from('transactions')
+          .select('id, user_id, type, amount, description, occurred_on, category_id, payer_share')
+          .eq('household_id', id)
+          .order('occurred_on', { ascending: false })
+          .order('id')
+          .range(from, from + 999);
+        if (txError) throw txError;
+        shared.push(...data);
+        if (data.length < 1000) break;
+      }
+      const setRes = await sb.from('household_settlements').select('id, from_user, to_user, amount, settled_on').eq('household_id', id);
+      if (setRes.error) throw setRes.error;
+      let invite = null;
+      if (!other) {
+        const invRes = await sb.from('household_invites').select('code, expires_at').order('created_at', { ascending: false }).limit(1);
+        if (invRes.error) throw invRes.error;
+        invite = invRes.data[0] || null;
+      }
+      state.household = { id, myName: me.display_name, partner: other ? { user_id: other.user_id, name: other.display_name } : null };
+      state.householdInvite = invite;
+      state.shared = shared.map((t) => ({ ...t, amount: Number(t.amount), payer_share: Number(t.payer_share) }));
+      state.settlements = setRes.data.map((x) => ({ ...x, amount: Number(x.amount) }));
+    } catch (err) {
+      // sem a migration completa (ou erro do servidor) o app segue sem o casal
+      if (Offline.isNetworkError(err)) throw err;
+      reset();
+    }
+  }
+
   async function loadCards() {
     const [cardsRes, invRes] = await Promise.all([
       sb.from('credit_cards').select('id, name, last4').order('name'),
@@ -453,12 +518,13 @@
     const { data, error } = await sb
       .from('transactions')
       .select('type, amount, description, category_id')
+      .eq('user_id', state.userId)
       .is('external_id', null)
       .order('created_at', { ascending: false })
       .limit(500);
     if (error) throw error;
     state.hints = Quick.buildHints(data);
-    const any = await sb.from('transactions').select('id').limit(1);
+    const any = await sb.from('transactions').select('id').eq('user_id', state.userId).limit(1);
     if (any.error) throw any.error;
     state.hasAnyTx = any.data.length > 0;
   }
@@ -470,7 +536,8 @@
     for (let from = 0; from < 20000; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('id, type, amount, description, category_id, occurred_on, created_at')
+        .select('id, type, amount, description, category_id, occurred_on, created_at, household_id, payer_share')
+        .eq('user_id', state.userId)
         .gte('occurred_on', since)
         .order('occurred_on')
         .order('id')
@@ -485,7 +552,7 @@
   async function loadRecurring() {
     const { data, error } = await sb
       .from('recurring_transactions')
-      .select('id, type, amount, description, category_id, day_of_month, start_on, generated_through, active')
+      .select('id, type, amount, description, category_id, day_of_month, start_on, generated_through, active, household_id, payer_share')
       .order('created_at');
     if (error) throw error;
     state.recurring = data.map((r) => ({ ...r, amount: Number(r.amount) }));
@@ -510,6 +577,8 @@
         category_id: r.category_id,
         occurred_on: o.date,
         external_id: o.externalId,
+        household_id: r.household_id || null,
+        payer_share: r.household_id ? r.payer_share : null,
       }));
       for (let i = 0; i < rows.length; i += 100) {
         const { data, error } = await sb
@@ -534,6 +603,7 @@
     const { data, error } = await sb
       .from('transactions')
       .select('type, amount, description, occurred_on, category_id, external_id')
+      .eq('user_id', state.userId)
       .gte('occurred_on', since)
       .not('description', 'is', null)
       .limit(2000);
@@ -571,6 +641,11 @@
       rules: state.rules,
       trendRows: state.trendRows,
       hasAnyTx: state.hasAnyTx,
+      household: state.household,
+      householdInvite: state.householdInvite,
+      shared: state.shared,
+      settlements: state.settlements,
+      partnerCategories: [...state.partnerCategories],
     });
   }
 
@@ -589,6 +664,11 @@
     state.bills = d.bills || [];
     state.goals = d.goals || [];
     state.rules = d.rules || [];
+    state.household = d.household || null;
+    state.householdInvite = d.householdInvite || null;
+    state.shared = d.shared || [];
+    state.settlements = d.settlements || [];
+    state.partnerCategories = new Map(d.partnerCategories || []);
     state.trendRows = d.trendRows || [];
     state.hasAnyTx = d.hasAnyTx !== false;
     state.hints = null;
@@ -629,12 +709,18 @@
     let sent = 0;
     try {
       for (const item of queue) {
-        const row = {
+        let row = {
           id: item.id, type: item.type, amount: item.amount, description: item.description,
           category_id: item.category_id, occurred_on: item.occurred_on, created_at: item.created_at,
+          household_id: item.household_id || null, payer_share: item.household_id ? item.payer_share : null,
         };
         const send = (r) => sb.from('transactions').upsert(r, { onConflict: 'id', ignoreDuplicates: true });
         let { error } = await send(row);
+        if (error && !Offline.isNetworkError(error) && row.household_id) {
+          // saiu do casal enquanto estava offline: envia como lançamento privado
+          row = { ...row, household_id: null, payer_share: null };
+          ({ error } = await send(row));
+        }
         if (error && !Offline.isNetworkError(error) && row.category_id) {
           // categoria apagada enquanto estava offline: envia sem categoria
           ({ error } = await send({ ...row, category_id: null }));
@@ -686,7 +772,7 @@
       if (n > 0) toast(n === 1 ? '1 lançamento enviado' : `${n} lançamentos enviados`);
     });
     try {
-      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals(), loadRules(), loadCards()]);
+      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals(), loadRules(), loadCards(), loadHousehold()]);
     } catch (err) {
       if (Offline.isNetworkError(err)) { offlineRefresh(); return; }
       toast(friendlyError(err));
@@ -777,6 +863,7 @@
     renderBills();
     renderGoals();
     renderCards();
+    renderHousehold();
     renderOnboarding();
     renderTrend();
   }
@@ -900,6 +987,7 @@
       const { data, error } = await sb
         .from('transactions')
         .select('type, amount, occurred_on, category_id')
+        .eq('user_id', state.userId)
         .gte('occurred_on', start)
         .lt('occurred_on', next)
         .order('occurred_on')
@@ -1152,7 +1240,7 @@
         const info = el('span', 'info');
         info.append(
           el('span', 'title', t.description || categoryName(t.category_id)),
-          el('span', 'sub', categoryName(t.category_id))
+          el('span', 'sub', Household.isShared(t) ? `${categoryName(t.category_id)} · Casal ${Household.splitLabel(t.payer_share)}` : categoryName(t.category_id))
         );
         const sign = t.type === 'income' ? '+ ' : '− ';
         if (state.selecting && !t.pending) {
@@ -1328,6 +1416,7 @@
       const { data, error } = await sb
         .from('transactions')
         .select('id, type, description')
+        .eq('user_id', state.userId)
         .is('category_id', null)
         .not('description', 'is', null)
         .limit(1000);
@@ -1497,6 +1586,281 @@
     await refresh();
   }
 
+  /* ---------- Casal ---------- */
+
+  const partnerName = () => (state.household && state.household.partner ? state.household.partner.name : '');
+  const fmtPct = (n) => String(Math.round(n * 100) / 100).replace('.', ',');
+
+  // Controles "Compartilhar com o casal" do formulário de lançamento e do de lançamento fixo.
+  function shareUI(prefix, getType, amountId) {
+    const box = $(`${prefix}-share-box`);
+    const check = $(`${prefix}-share`);
+    const area = $(`${prefix}-share-split`);
+    const select = $(`${prefix}-split`);
+    const custom = $(`${prefix}-split-custom`);
+    const hint = $(`${prefix}-split-hint`);
+    for (const p of Household.SPLIT_PRESETS) {
+      const o = el('option', '', p.label);
+      o.value = String(p.share);
+      select.append(o);
+    }
+    const other = el('option', '', 'Outra divisão…');
+    other.value = 'custom';
+    select.append(other);
+
+    const available = () => !!(state.household && state.household.partner) && getType() === 'expense';
+    const share = () => (select.value === 'custom' ? Household.parseShare(custom.value) : Number(select.value));
+
+    function update() {
+      const can = available();
+      box.hidden = !can;
+      if (can) $(`${prefix}-share-label`).textContent = `Compartilhar com ${partnerName()}`;
+      const on = can && check.checked;
+      area.hidden = !on;
+      custom.hidden = !(on && select.value === 'custom');
+      if (!on) return;
+      const mine = share();
+      const amount = parseAmount($(amountId).value);
+      if (mine == null) hint.textContent = 'Digite a sua parte em %, de 0 a 100.';
+      else if (!(amount > 0)) hint.textContent = `Você fica com ${fmtPct(mine)}% e ${partnerName()} com ${fmtPct(100 - mine)}%.`;
+      else {
+        const owed = Household.owedByPartner({ amount, payer_share: mine });
+        hint.textContent = owed > 0 ? `${partnerName()} te deve ${brl.format(owed)}.` : 'Sem dívida: a despesa é toda sua.';
+      }
+    }
+
+    [check, select].forEach((n) => n.addEventListener('change', update));
+    custom.addEventListener('input', update);
+    $(amountId).addEventListener('input', update);
+
+    return {
+      update,
+      // row = lançamento (ou lançamento fixo) em edição, se houver.
+      open(row) {
+        const shared = !!row && row.household_id != null && row.payer_share != null;
+        check.checked = shared;
+        select.value = '50';
+        custom.value = '';
+        if (shared) {
+          const v = String(Number(row.payer_share));
+          if ([...select.options].some((o) => o.value === v)) select.value = v;
+          else { select.value = 'custom'; custom.value = v.replace('.', ','); }
+        }
+        update();
+      },
+      read() {
+        if (!available() || !check.checked) return { household_id: null, payer_share: null };
+        const mine = share();
+        if (mine == null) return { error: 'Digite a sua parte da divisão em %, de 0 a 100.' };
+        return { household_id: state.household.id, payer_share: mine };
+      },
+    };
+  }
+
+  const txShare = shareUI('tx', () => document.querySelector('input[name="type"]:checked').value, 'tx-amount');
+  const recShare = shareUI('rec', () => document.querySelector('input[name="rtype"]:checked').value, 'rec-amount');
+
+  function closeOnOutside(dialog) {
+    dialog.addEventListener('click', (e) => {
+      const r = dialog.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
+    });
+  }
+
+  function requireOnline(what) {
+    if (navigator.onLine && !state.viewingCache) return true;
+    toast(`Sem conexão: ${what} precisa de internet.`);
+    return false;
+  }
+
+  function formatCode(code) { return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code; }
+
+  function householdBalance() {
+    return Household.balance(state.shared, state.settlements, state.userId);
+  }
+
+  // Painel do Resumo: quem deve a quem e as despesas compartilhadas do mês.
+  function renderHousehold() {
+    renderHouseholdSettings();
+    const panel = $('household-panel');
+    const hh = state.household;
+    if (!hh || !hh.partner) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const partner = hh.partner;
+    const me = state.userId;
+    const [start, next] = monthRange();
+    const month = state.shared.filter((t) => t.occurred_on >= start && t.occurred_on < next);
+
+    const bal = householdBalance();
+    const line = $('household-balance');
+    line.className = `household-balance${bal > 0 ? ' pos' : bal < 0 ? ' neg' : ''}`;
+    line.textContent = bal > 0
+      ? `${partner.name} te deve ${brl.format(bal)}.`
+      : bal < 0 ? `Você deve ${brl.format(-bal)} a ${partner.name}.` : 'Tudo acertado entre vocês.';
+    $('household-settle').hidden = !(bal < 0);
+    $('household-note').hidden = !(bal > 0);
+    $('household-note').textContent = 'Quem paga registra o acerto no próprio app.';
+
+    const sum = Household.monthSummary(month, me);
+    $('hh-total').textContent = brl.format(sum.total);
+    $('hh-me-label').textContent = 'Você pagou';
+    $('hh-paid-me').textContent = brl.format(sum.paidByMe);
+    $('hh-partner-label').textContent = `${partner.name} pagou`;
+    $('hh-paid-partner').textContent = brl.format(sum.paidByPartner);
+
+    const ul = $('household-list');
+    ul.replaceChildren();
+    $('household-empty').hidden = month.length > 0;
+    for (const t of month) {
+      const mine = t.user_id === me;
+      const owed = Household.owedByPartner(t);
+      const category = mine ? categoryName(t.category_id) : state.partnerCategories.get(t.category_id) || 'Sem categoria';
+      const li = el('li');
+      const text = el('span', 'bill-text');
+      text.append(
+        el('span', 'title', t.description || category),
+        el('span', 'sub', `${mine ? 'Você' : partner.name} pagou ${brl.format(t.amount)} · ${Household.splitLabel(mine ? t.payer_share : 100 - t.payer_share)} · ${fmtDate(t.occurred_on)}`)
+      );
+      li.append(text, el('span', `hh-delta ${mine ? 'pos' : 'neg'}`, `${mine ? '+' : '−'} ${brl.format(owed)}`));
+      ul.append(li);
+    }
+  }
+
+  // Ajustes → Casal: criar, convidar, entrar e sair.
+  function renderHouseholdSettings() {
+    const hh = state.household;
+    $('household-none').hidden = !!hh;
+    $('household-have').hidden = !hh;
+    $('household-hint').textContent = !hh ? 'Gastos compartilhados' : hh.partner ? `Com ${hh.partner.name}` : 'Aguardando o parceiro';
+    if (!hh) return;
+    const ul = $('household-members');
+    ul.replaceChildren();
+    const people = [{ name: hh.myName, role: 'Você' }];
+    if (hh.partner) people.push({ name: hh.partner.name, role: 'Parceiro' });
+    for (const p of people) {
+      const li = el('li');
+      const text = el('span', 'bill-text');
+      text.append(el('span', 'title', p.name), el('span', 'sub', p.role));
+      li.append(text);
+      ul.append(li);
+    }
+    $('household-invite').hidden = !!hh.partner;
+    if (!hh.partner) {
+      $('household-code').textContent = state.householdInvite ? formatCode(state.householdInvite.code) : 'Sem código válido. Gere um novo.';
+    }
+  }
+
+  const householdSheet = $('household-sheet');
+  let householdMode = 'create';
+  closeOnOutside(householdSheet);
+
+  function openHouseholdSheet(mode) {
+    if (!requireOnline(mode === 'create' ? 'criar o casal' : 'entrar no casal')) return;
+    householdMode = mode;
+    $('household-title').textContent = mode === 'create' ? 'Criar casal' : 'Entrar com código';
+    $('household-form-note').textContent = mode === 'create'
+      ? 'Você vai receber um código para o seu parceiro entrar. Vocês só veem um do outro o que marcarem como compartilhado.'
+      : 'Digite o código que o seu parceiro gerou em Ajustes → Casal.';
+    $('household-code-row').hidden = mode !== 'join';
+    $('household-code-input').value = '';
+    const guess = ($('account-email').textContent || '').split('@')[0];
+    $('household-name').value = guess ? guess.charAt(0).toUpperCase() + guess.slice(1) : '';
+    $('household-error').hidden = true;
+    householdSheet.showModal();
+    (mode === 'join' ? $('household-code-input') : $('household-name')).focus();
+  }
+
+  $('household-create').addEventListener('click', () => openHouseholdSheet('create'));
+  $('household-join').addEventListener('click', () => openHouseholdSheet('join'));
+  $('household-cancel').addEventListener('click', () => householdSheet.close());
+
+  $('household-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('household-error');
+    errorBox.hidden = true;
+    const fail = (message) => { errorBox.textContent = message; errorBox.hidden = false; };
+    const name = $('household-name').value.trim();
+    if (!name) return fail('Diga como você quer ser chamado.');
+    const code = Household.normalizeCode($('household-code-input').value);
+    if (householdMode === 'join' && !Household.isValidCode(code)) return fail('Código inválido. Ele tem 8 letras e números.');
+
+    const save = $('household-save');
+    save.disabled = true;
+    const { error } = householdMode === 'create'
+      ? await sb.rpc('create_household', { p_name: name })
+      : await sb.rpc('join_household', { p_code: code, p_name: name });
+    save.disabled = false;
+    if (error) return fail(friendlyError(error));
+
+    householdSheet.close();
+    toast(householdMode === 'create' ? 'Casal criado. Passe o código ao seu parceiro.' : 'Você entrou no casal');
+    await refresh();
+    $('household-group').open = true;
+  });
+
+  $('household-copy').addEventListener('click', async () => {
+    const code = state.householdInvite && state.householdInvite.code;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      toast('Código copiado');
+    } catch (err) {
+      toast('Não deu para copiar. Selecione o código e copie.');
+    }
+  });
+
+  $('household-newcode').addEventListener('click', async () => {
+    if (!requireOnline('gerar um código')) return;
+    const { error } = await sb.rpc('new_household_invite');
+    if (error) { toast(friendlyError(error)); return; }
+    toast('Novo código gerado');
+    await refresh();
+    $('household-group').open = true;
+  });
+
+  $('household-leave').addEventListener('click', async () => {
+    if (!requireOnline('sair do casal')) return;
+    if (!confirm('Sair do casal? Os lançamentos compartilhados de vocês dois voltam a ser privados e o histórico de acertos é apagado. Nenhum lançamento é excluído.')) return;
+    const { error } = await sb.rpc('leave_household');
+    if (error) { toast(friendlyError(error)); return; }
+    toast('Você saiu do casal');
+    await refresh();
+  });
+
+  const settleSheet = $('settle-sheet');
+  closeOnOutside(settleSheet);
+
+  $('household-settle').addEventListener('click', () => {
+    const bal = householdBalance();
+    if (!(bal < 0) || !state.household || !state.household.partner) return;
+    if (!requireOnline('acertar contas')) return;
+    $('settle-note').textContent = `Você deve ${brl.format(-bal)} a ${partnerName()}. Registre aqui quando fizer o pagamento.`;
+    $('settle-amount').value = (-bal).toFixed(2).replace('.', ',');
+    $('settle-error').hidden = true;
+    settleSheet.showModal();
+    $('settle-amount').focus();
+  });
+
+  $('settle-cancel').addEventListener('click', () => settleSheet.close());
+
+  $('settle-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = $('settle-error');
+    errorBox.hidden = true;
+    const amount = parseAmount($('settle-amount').value);
+    if (!(amount > 0)) { errorBox.textContent = 'Informe um valor maior que zero.'; errorBox.hidden = false; return; }
+    const hh = state.household;
+    if (!hh || !hh.partner) return;
+    const save = $('settle-save');
+    save.disabled = true;
+    const { error } = await sb.from('household_settlements').insert({ household_id: hh.id, to_user: hh.partner.user_id, amount });
+    save.disabled = false;
+    if (error) { errorBox.textContent = friendlyError(error); errorBox.hidden = false; return; }
+    settleSheet.close();
+    toast('Acerto registrado');
+    await refresh();
+  });
+
   /* ---------- Lançamentos ---------- */
 
   const sheet = $('sheet');
@@ -1541,6 +1905,7 @@
       fillDescriptionOptions(currentType());
       state.categoryTouched = false;
       showHint('');
+      txShare.update();
     })
   );
 
@@ -1570,6 +1935,7 @@
     fillDescriptionOptions(last.type);
     state.categoryTouched = true;
     showHint('');
+    txShare.update();
     $('tx-save').focus();
   });
 
@@ -1601,6 +1967,7 @@
     const inViewedMonth =
       today.getFullYear() === state.month.getFullYear() && today.getMonth() === state.month.getMonth();
     $('tx-date').value = tx ? tx.occurred_on : ymd(inViewedMonth ? today : state.month);
+    txShare.open(tx);
 
     sheet.showModal();
     if (!tx) $('tx-amount').focus();
@@ -1639,6 +2006,10 @@
       category_id: $('tx-category').value || null,
       occurred_on: date,
     };
+    const share = txShare.read();
+    if (share.error) { errorBox.textContent = share.error; errorBox.hidden = false; return; }
+    payload.household_id = share.household_id;
+    payload.payer_share = share.payer_share;
 
     const save = $('tx-save');
 
@@ -1779,7 +2150,7 @@
   }
 
   document.querySelectorAll('input[name="rtype"]').forEach((r) =>
-    r.addEventListener('change', () => fillRecCategoryOptions(currentRecType(), ''))
+    r.addEventListener('change', () => { fillRecCategoryOptions(currentRecType(), ''); recShare.update(); })
   );
 
   // rec = recorrência existente (editar); hint = sugestão para preencher uma nova.
@@ -1806,6 +2177,7 @@
       $('rec-start').value = hint ? Recurring.nextMonthLabel(hint.lastMonth) : monthLabel(new Date());
     }
     $('rec-start').disabled = !!rec;
+    recShare.open(rec);
 
     recSheet.showModal();
     if (!rec && !hint) $('rec-amount').focus();
@@ -1841,6 +2213,10 @@
       category_id: $('rec-category').value || null,
       day_of_month: day,
     };
+    const share = recShare.read();
+    if (share.error) return fail(share.error);
+    payload.household_id = share.household_id;
+    payload.payer_share = share.payer_share;
 
     const editing = state.editingRecurring;
     if (editing) {
@@ -2342,6 +2718,7 @@
       const { data, error } = await sb
         .from('transactions')
         .select('id, type, amount, description, occurred_on, category_id')
+        .eq('user_id', state.userId)
         .order('occurred_on', { ascending: false })
         .order('id')
         .range(from, from + 999);
@@ -2557,6 +2934,7 @@
       const { data, error } = await sb
         .from('transactions')
         .select('external_id')
+        .eq('user_id', state.userId)
         .in('external_id', ids.slice(i, i + 80));
       if (error) throw error;
       data.forEach((r) => found.add(r.external_id));
@@ -2574,6 +2952,7 @@
       const { data, error } = await sb
         .from('transactions')
         .select('occurred_on, amount, type, external_id')
+        .eq('user_id', state.userId)
         .gte('occurred_on', dates[0])
         .lte('occurred_on', dates[dates.length - 1])
         .order('occurred_on')
@@ -2607,6 +2986,7 @@
     const { data, error } = await sb
       .from('transactions')
       .select('description, category_id, type')
+      .eq('user_id', state.userId)
       .not('category_id', 'is', null)
       .not('description', 'is', null)
       .order('created_at', { ascending: false })
@@ -2810,6 +3190,7 @@
         const { data, error } = await sb
           .from('transactions')
           .select('id, occurred_on, amount, type, external_id, created_at')
+          .eq('user_id', state.userId)
           .not('external_id', 'is', null)
           .order('id')
           .range(from, from + 999);

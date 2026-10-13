@@ -3,11 +3,12 @@
   const uid = () => 'id-' + (++n);
   const db = {
     categories: [
-      { id: 'cat-mercado', name: 'Mercado', type: 'expense', created_at: '2026-01-01' },
-      { id: 'cat-sal', name: 'Salário', type: 'income', created_at: '2026-01-01' },
+      { id: 'cat-mercado', user_id: 'u1', name: 'Mercado', type: 'expense', created_at: '2026-01-01' },
+      { id: 'cat-sal', user_id: 'u1', name: 'Salário', type: 'income', created_at: '2026-01-01' },
     ],
     transactions: [], recurring_transactions: [], budgets: [], bills: [], goals: [], category_rules: [],
     credit_cards: [], card_invoices: [],
+    household_members: [], household_invites: [], household_settlements: [],
   };
   if (window.__seed) Object.assign(db, window.__seed);
   window.__db = db;
@@ -35,7 +36,7 @@
             const hit = rows.find((r) => cols.every((c) => r[c] === p[c] && p[c] != null));
             if (hit) { if (!q.opts.ignoreDuplicates) Object.assign(hit, p); continue; }
           }
-          const defaults = table === 'recurring_transactions' ? { active: true, generated_through: null } : {};
+          const defaults = table === 'recurring_transactions' ? { active: true, generated_through: null } : table === 'household_settlements' ? { from_user: 'u1' } : {};
           const row = { id: uid(), created_at: new Date().toISOString(), user_id: 'u1', ...defaults, ...p };
           rows.push(row); inserted.push({ ...row });
         }
@@ -76,7 +77,34 @@
     createClient() {
       return {
         from: builder,
-        rpc: async () => ({ error: null }),
+        rpc: async (name, args) => {
+          const now = new Date().toISOString();
+          if (name === 'create_household') {
+            db.household_members = [{ household_id: 'h-new', user_id: 'u1', display_name: args.p_name }];
+            db.household_invites = [{ code: 'ABCD2345', expires_at: '2099-01-01', created_at: now }];
+            return { data: 'ABCD2345', error: null };
+          }
+          if (name === 'join_household') {
+            if (args.p_code !== 'ABCD2345') return { data: null, error: { message: 'invalid invite' } };
+            db.household_members = [
+              { household_id: 'h-new', user_id: 'u2', display_name: 'Beto' },
+              { household_id: 'h-new', user_id: 'u1', display_name: args.p_name },
+            ];
+            db.household_invites = [];
+            return { data: null, error: null };
+          }
+          if (name === 'new_household_invite') {
+            db.household_invites = [{ code: 'WXYZ6789', expires_at: '2099-01-01', created_at: now }];
+            return { data: 'WXYZ6789', error: null };
+          }
+          if (name === 'leave_household') {
+            db.household_members = [];
+            db.household_settlements = [];
+            db.transactions.forEach((t) => { t.household_id = null; t.payer_share = null; });
+            return { data: null, error: null };
+          }
+          return { error: null };
+        },
         auth: {
           onAuthStateChange(fn) { setTimeout(() => fn(window.__noSession ? 'SIGNED_OUT' : 'SIGNED_IN', window.__noSession ? null : { user: { id: 'u1', email: 'marcelo@exemplo.com' } }), 0); },
           updateUser: async ({ password, current_password }) => {

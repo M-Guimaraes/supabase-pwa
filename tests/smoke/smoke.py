@@ -309,5 +309,90 @@ with sync_playwright() as p:
     check(p2.is_hidden('#auth-error') and p2.is_hidden('#auth-confirm-row'), 'cadastro aceito volta ao login')
     p2.fill('#auth-email', 'errado'); p2.fill('#auth-password', 'x'); p2.click('#auth-submit')
     check('e-mail válido' in p2.inner_text('#auth-error'), 'e-mail inválido é recusado')
+    # casal: dois usuários, lançamentos compartilhados e acerto de contas
+    mon = today.strftime('%Y-%m')
+    seed = {
+        'household_members': [
+            {'household_id': 'h1', 'user_id': 'u1', 'display_name': 'Ana'},
+            {'household_id': 'h1', 'user_id': 'u2', 'display_name': 'Beto'}],
+        'household_invites': [], 'household_settlements': [],
+        'categories': [
+            {'id': 'cat-mercado', 'user_id': 'u1', 'name': 'Mercado', 'type': 'expense'},
+            {'id': 'cat-casa', 'user_id': 'u2', 'name': 'Contas da casa', 'type': 'expense'}],
+        'transactions': [
+            {'id': 't-mine', 'user_id': 'u1', 'type': 'expense', 'amount': 100, 'description': 'Água', 'occurred_on': mon + '-01', 'category_id': 'cat-mercado', 'household_id': 'h1', 'payer_share': 50, 'created_at': '2026-01-01'},
+            {'id': 't-priv', 'user_id': 'u1', 'type': 'expense', 'amount': 30, 'description': 'Privado', 'occurred_on': mon + '-02', 'category_id': None, 'household_id': None, 'payer_share': None, 'created_at': '2026-01-01'},
+            {'id': 't-partner', 'user_id': 'u2', 'type': 'expense', 'amount': 150, 'description': 'Luz', 'occurred_on': mon + '-03', 'category_id': 'cat-casa', 'household_id': 'h1', 'payer_share': 50, 'created_at': '2026-01-01'}],
+    }
+    ctx3 = b.new_context(viewport={'width': 390, 'height': 800}, service_workers='block')
+    p3 = ctx3.new_page()
+    p3.on('pageerror', lambda e: problems.append('pageerror: ' + str(e)))
+    p3.on('console', lambda m: m.type == 'error' and problems.append('console: ' + m.text))
+    p3.add_init_script('window.__seed = ' + json.dumps(seed))
+    p3.route('https://cdn.jsdelivr.net/**', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
+    p3.goto('http://127.0.0.1:8124/index.html'); p3.wait_for_selector('#app:not([hidden])'); p3.wait_for_timeout(500)
+    check(p3.is_visible('#household-panel'), 'painel do casal aparece no Resumo')
+    check('Você deve R$ 25,00 a Beto' in p3.inner_text('#household-balance').replace('\xa0', ' '), 'saldo: ' + p3.inner_text('#household-balance').replace('\xa0', ' '))
+    check(p3.is_visible('#household-settle'), 'botão acertar contas aparece para quem deve')
+    check('Luz' in p3.inner_text('#household-list').replace('\xa0', ' ') and 'Água' in p3.inner_text('#household-list').replace('\xa0', ' ') and 'Privado' not in p3.inner_text('#household-list').replace('\xa0', ' '), 'lista do casal tem só os compartilhados')
+    check('Beto pagou R$ 150,00' in p3.inner_text('#household-list').replace('\xa0', ' '), 'mostra quem pagou')
+    check('130,00' in p3.inner_text('#total-expense'), 'resumo pessoal não mistura o gasto do parceiro: ' + p3.inner_text('#total-expense'))
+    p3.click('[data-tab=list]'); p3.wait_for_timeout(200)
+    p3.click('[data-tab=summary]')
+    # acertar contas
+    p3.click('#household-settle'); p3.wait_for_selector('#settle-sheet[open]')
+    check(p3.input_value('#settle-amount') == '25,00', 'acerto vem preenchido com a dívida')
+    p3.click('#settle-save'); p3.wait_for_timeout(500)
+    check(len(p3.evaluate('__db.household_settlements')) == 1, 'acerto registrado')
+    check('Tudo acertado' in p3.inner_text('#household-balance').replace('\xa0', ' '), 'saldo zera depois do acerto: ' + p3.inner_text('#household-balance').replace('\xa0', ' '))
+    check(p3.is_hidden('#household-settle'), 'botão some sem dívida')
+    # novo lançamento compartilhado 60/40
+    fab(p3); p3.fill('#tx-amount', '200,00'); p3.fill('#tx-desc', 'Internet')
+    check(p3.is_visible('#tx-share-box'), 'opção compartilhar aparece em despesa')
+    check('Beto' in p3.inner_text('#tx-share-label'), 'compartilhar com o nome do parceiro')
+    p3.check('#tx-share'); p3.select_option('#tx-split', '60')
+    check('Beto te deve R$ 80,00' in p3.inner_text('#tx-split-hint').replace('\xa0', ' '), 'dica mostra quanto o parceiro deve: ' + p3.inner_text('#tx-split-hint').replace('\xa0', ' '))
+    p3.click('label[for=type-income]'); check(p3.is_hidden('#tx-share-box'), 'receita não pode ser compartilhada')
+    p3.click('label[for=type-expense]'); check(p3.is_visible('#tx-share-box'), 'voltar pra despesa mostra de novo')
+    p3.click('#tx-save'); p3.wait_for_timeout(500)
+    net = [t for t in p3.evaluate('__db.transactions') if t.get('description') == 'Internet']
+    check(len(net) == 1 and net[0]['household_id'] == 'h1' and net[0]['payer_share'] == 60, 'lançamento salvo como compartilhado 60/40: %s' % net)
+    p3.click('[data-tab=summary]')
+    check('Beto te deve R$ 80,00' in p3.inner_text('#household-balance').replace('\xa0', ' '), 'saldo depois do novo lançamento: ' + p3.inner_text('#household-balance').replace('\xa0', ' '))
+    p3.click('[data-tab=list]'); check('Casal 60/40' in p3.inner_text('#tx-groups'), 'lista mostra selo Casal 60/40')
+    # lançamento privado continua privado
+    fab(p3); p3.fill('#tx-amount', '10,00'); p3.click('#tx-save'); p3.wait_for_timeout(400)
+    priv = [t for t in p3.evaluate('__db.transactions') if t.get('amount') == 10]
+    check(len(priv) == 1 and priv[0].get('household_id') is None, 'sem marcar, o lançamento fica privado')
+    # Ajustes → Casal
+    go_settings(p3)
+    check('Com Beto' in p3.inner_text('#household-hint'), 'Ajustes mostra o parceiro: ' + p3.inner_text('#household-hint'))
+    check(p3.locator('#household-members li').count() == 2, 'lista os dois membros')
+    check(p3.is_hidden('#household-invite'), 'sem convite quando o casal está completo')
+    p3.once('dialog', lambda d: d.accept())
+    p3.click('#household-leave'); p3.wait_for_timeout(500)
+    check(p3.is_visible('#household-none') and p3.is_hidden('#household-have'), 'depois de sair, volta a opção de criar/entrar')
+    check(all(t.get('household_id') is None for t in p3.evaluate('__db.transactions')), 'sair torna tudo privado')
+    p3.click('[data-tab=summary]'); check(p3.is_hidden('#household-panel'), 'painel do casal some depois de sair')
+    # criar casal e convite
+    go_settings(p3)
+    p3.click('#household-create'); p3.wait_for_selector('#household-sheet[open]')
+    check(p3.is_hidden('#household-code-row'), 'criar não pede código')
+    p3.fill('#household-name', 'Ana'); p3.click('#household-save'); p3.wait_for_timeout(500)
+    check(p3.is_visible('#household-invite') and 'ABCD-2345' in p3.inner_text('#household-code'), 'mostra o código do convite: ' + p3.inner_text('#household-code'))
+    check('Aguardando' in p3.inner_text('#household-hint'), 'aguardando o parceiro')
+    p3.click('#household-newcode'); p3.wait_for_timeout(400)
+    check('WXYZ-6789' in p3.inner_text('#household-code'), 'gera outro código')
+    p3.once('dialog', lambda d: d.accept()); p3.click('#household-leave'); p3.wait_for_timeout(400)
+    # entrar com código
+    p3.click('#household-join'); p3.wait_for_selector('#household-sheet[open]')
+    check(p3.is_visible('#household-code-row'), 'entrar pede o código')
+    p3.fill('#household-name', 'Ana'); p3.fill('#household-code-input', 'abc'); p3.click('#household-save')
+    check('Código inválido' in p3.inner_text('#household-error'), 'código curto é recusado: ' + p3.inner_text('#household-error'))
+    p3.fill('#household-code-input', 'zzzzzzzz'); p3.click('#household-save'); p3.wait_for_timeout(300)
+    check('Código inválido' in p3.inner_text('#household-error'), 'código errado é recusado pelo banco')
+    p3.fill('#household-code-input', 'abcd-2345'); p3.click('#household-save'); p3.wait_for_timeout(500)
+    check('Com Beto' in p3.inner_text('#household-hint'), 'entrou no casal com o código: ' + p3.inner_text('#household-hint'))
+    p3.screenshot(path='/tmp/caixa-casal.png', full_page=True)
     b.close()
 print('\nPROBLEMAS:' if problems else '\nTudo certo'); [print(' -', x) for x in problems]
