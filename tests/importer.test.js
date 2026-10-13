@@ -205,3 +205,35 @@ test('PDF no formato do Santander (Extrato Consolidado Inteligente): lê a tabel
 test('parsePDFStatement devolve null para um PDF de banco não reconhecido', () => {
   assert.equal(I.parsePDFStatement('qualquer outro texto de pdf, sem relação com nenhum schema'), null);
 });
+
+// Cobre: pagamento da fatura anterior ignorado (já é lançamento no extrato bancário),
+// parcela com "parcela atual/total" anexada à descrição e com a data da compra
+// original descartada (conta no mês desta fatura), e tarifa/IOF de boleto somados ao
+// valor da despesa que os gerou (em vez de virarem lançamentos de R$ poucos reais).
+test('PDF de fatura do cartão Santander: lê as compras e ignora o pagamento da fatura anterior', () => {
+  const text = fixtureText('santander-fatura-exemplo.txt');
+  const r = I.parseCardInvoicePDF(text);
+  assert.ok(r, 'reconheceu o schema da fatura');
+  assert.deepEqual(r.invoice, {
+    total: 512,
+    minPayment: 100,
+    dueOn: '2026-10-07',
+    periodStart: '2026-09-01',
+    periodEnd: '2026-09-30',
+  });
+  assert.equal(r.cards.length, 1);
+  assert.equal(r.cards[0].last4, '2222');
+  assert.equal(r.cards[0].name, 'FULANO DA SILVA');
+  assert.deepEqual(
+    r.cards[0].items.map((i) => [i.date, i.signed, i.description]),
+    [
+      ['2026-09-30', -50, 'LOJA EXEMPLO (parcela 06/10)'],
+      ['2026-09-01', -312, 'PGTO BOLETO TARIFA PAGAMENTOCONTAS IOF'],
+      ['2026-09-05', -150, 'MERCADO EXEMPLO'],
+    ]
+  );
+});
+
+test('parseCardInvoicePDF devolve null para um PDF que não é fatura de cartão', () => {
+  assert.equal(I.parseCardInvoicePDF('qualquer outro texto de pdf, sem relação com nenhum schema'), null);
+});

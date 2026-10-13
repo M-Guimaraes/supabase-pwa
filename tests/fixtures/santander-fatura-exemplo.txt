@@ -1,0 +1,29 @@
+Olá, Fulano! Esta é a fatura do seu cartão SANTANDER
+UNIQUE VISA contendo compras e pagamentos realizados
+até 30/09.
+Total a Pagar Vencimento Seu limite é
+R$ 512,00 07/10/2026 R$10.000,00
+1 Pagamento Total R$512,00
+2 Pagamento Mínimo R$100,00
+R$ 512,00 Esta Fatura 01/09/26 a 30/09/26
+Detalhamento da Fatura
+FULANO DA SILVA - 1111 XXXX XXXX 2222
+Pagamento e Demais Créditos
+Compra Data Descrição Parcela R$ US$
+07/09 PAGAMENTO DE FATURA-INTERNET -400,00
+Parcelamentos
+Compra Data Descrição Parcela R$ US$
+11/04 LOJA EXEMPLO 06/10 50,00
+3
+Despesas
+Compra Data Descrição Parcela R$ US$
+01/09 PGTO BOLETO 300,00
+10,00
+TARIFA PAGAMENTOCONTAS
+2,00
+IOF
+05/09 MERCADO EXEMPLO 150,00
+VALOR TOTAL 512,00 0,00
+Resumo da Fatura
+Descrição R$ US$
+Saldo Anterior 400,00

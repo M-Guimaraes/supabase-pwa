@@ -607,6 +607,12 @@ main { padding: 0 1rem; }
 .cat-list li.bill-late .bill-text .sub { color: var(--neg); font-weight: 700; }
 .cat-list .btn.small { flex: none; margin-right: 0.4rem; }
 
+/* Cartão de crédito */
+
+.cards-toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.8rem; }
+.cat-list .bill-text .sub.paid { color: var(--pos); }
+.cat-list .bill-text .sub.open { color: var(--ink-soft); }
+
 /* Metas */
 .goal-pct { font-size: 1rem; }
 .goal-bar { height: 6px; margin: 0 0.9rem 0.6rem; border-radius: 99px; background: var(--tint); overflow: hidden; }

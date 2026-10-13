@@ -166,6 +166,28 @@ with sync_playwright() as p:
     check(page.locator('#tx-groups .tx').count() == n_day - 2, 'seleção múltipla excluiu os 2 lançamentos')
     check(page.is_hidden('#tx-bulk-bar'), 'sai do modo seleção depois de excluir')
     page.click('[data-tab=summary]')
+    # cartão de crédito (a leitura do PDF em si é testada com node --test e um PDF real,
+    # fora daqui; isto cobre a tela: cartão, fatura em aberto e a compra dentro dela)
+    page.evaluate("""
+      __db.credit_cards.push({id:'card1', name:'FULANO DA SILVA', last4:'0320', user_id:'u1', created_at:'2026-01-01'});
+      __db.card_invoices.push({id:'inv1', card_id:'card1', period_start:'2026-09-01', period_end:'2026-09-30', due_on:'2026-10-07', total:150, min_payment:50, paid_on:null, paid_amount:null, user_id:'u1', created_at:'2026-01-01'});
+      __db.transactions.push({id:'cardtx1', type:'expense', amount:150, description:'LOJA EXEMPLO', category_id:null, occurred_on:'2026-09-15', card_invoice_id:'inv1', external_id:'card:0320:2026-10-07:0', user_id:'u1', created_at:'c'});
+    """)
+    fab(page); page.fill('#tx-amount', '1,00'); page.select_option('#tx-category', 'cat-mercado'); page.click('#tx-save'); page.wait_for_timeout(300)
+    page.click('[data-tab=cards]'); page.wait_for_timeout(200)
+    check('FULANO DA SILVA' in page.inner_text('#cards-list') and '0320' in page.inner_text('#cards-list'), 'cartão aparece na aba Cartão')
+    page.click('#cards-list summary')
+    check('Em aberto' in page.inner_text('#cards-list'), 'fatura sem pagamento mostra "Em aberto"')
+    page.click('#cards-list .cat-list button')
+    page.wait_for_selector('#invoice-sheet[open]')
+    check('LOJA EXEMPLO' in page.inner_text('#invoice-groups'), 'fatura mostra a compra importada')
+    page.click('#invoice-close')
+    page.click('[data-tab=cards]')
+    page.click('#card-import-open'); page.wait_for_selector('#card-import-sheet[open]')
+    check(page.is_disabled('#card-import-submit'), 'importar fatura começa desabilitado, sem arquivo')
+    page.click('#card-import-cancel')
+    check(page.is_hidden('#card-import-sheet[open]'), 'cancelar fecha a folha de importar fatura')
+    page.click('[data-tab=summary]')
     # regras de categoria
     go_settings(page)
     page.fill('#rule-pattern', 'a'); page.click('#rule-add')
@@ -194,6 +216,23 @@ with sync_playwright() as p:
     check('1 já importados' in page.inner_text('#import-summary'), 'resumo conta o repetido: ' + page.inner_text('#import-summary'))
     check(page.locator('#import-list li.dup input').is_disabled(), 'repetido não pode ser marcado')
     page.click('#import-cancel')
+    # pagamento de fatura no extrato: reconhecido automaticamente, não dobra a despesa
+    page.evaluate("""
+      __db.card_invoices.push({id:'inv2', card_id:'card1', period_start:'2026-08-01', period_end:'2026-08-31', due_on:'2026-09-07', total:500, min_payment:100, paid_on:null, paid_amount:null, user_id:'u1', created_at:'2026-01-01'});
+    """)
+    fab(page); page.fill('#tx-amount', '1,00'); page.select_option('#tx-category', 'cat-mercado'); page.click('#tx-save'); page.wait_for_timeout(300)
+    ofx2 = ('<OFX><BANKTRANLIST>'
+            '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261009<TRNAMT>-500.00<FITID>P1<MEMO>PAGAMENTO CARTAO CREDITO</STMTTRN>'
+            '</BANKTRANLIST></OFX>')
+    go_settings(page); page.click('#import-open'); page.wait_for_selector('#import-sheet[open]')
+    page.set_input_files('#import-file', files=[{'name': 'p.ofx', 'mimeType': 'application/x-ofx', 'buffer': ofx2.encode()}])
+    page.wait_for_selector('#import-list li'); page.wait_for_timeout(300)
+    check('Pagamento da fatura' in page.inner_text('#import-list'), 'pagamento de fatura é identificado no extrato')
+    check(not page.locator('#import-list li input[type=checkbox]').first.is_checked(), 'pagamento de fatura some desmarcado por padrão')
+    check(not page.is_disabled('#import-submit'), 'botão de importar fica habilitado mesmo só com a fatura a marcar')
+    page.click('#import-submit'); page.wait_for_timeout(400)
+    check(page.evaluate("__db.card_invoices.find(i => i.id === 'inv2').paid_on") == '2026-10-09', 'fatura marcada como paga pelo pagamento do extrato')
+    check(page.evaluate("__db.transactions.filter(t => t.external_id === 'ofx:P1').length") == 0, 'pagamento da fatura não virou despesa duplicada')
     # limpeza de duplicados já salvos
     page.evaluate("__db.transactions.push({id:'ofx1',type:'expense',amount:77.7,description:'Nome no OFX',category_id:null,occurred_on:'2026-10-08',created_at:'b',external_id:'ofx:QQ',user_id:'u1'})")
     page.once('dialog', lambda d: d.accept())

@@ -227,6 +227,14 @@
         <p id="tx-empty" class="empty" hidden>Nenhum lançamento neste período. Toque em + para adicionar.</p>
       </section>
 
+      <section id="view-cards" class="view" data-view="cards" hidden>
+        <div class="cards-toolbar">
+          <button id="card-import-open" class="btn primary small" type="button">Importar fatura</button>
+        </div>
+        <div id="cards-list"></div>
+        <p id="cards-empty" class="empty" hidden>Nenhum cartão ainda. Importe o PDF da fatura pra começar.</p>
+      </section>
+
       <section id="view-categories" class="view" data-view="categories" hidden>
         <div class="profile">
           <span class="profile-badge" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.6-3.6 3.5-5.6 7-5.6s6.4 2 7 5.6"/></svg></span>
@@ -374,6 +382,10 @@
       <button class="tab" type="button" data-tab="list">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5h10M9 12h10M9 17.5h10"/><path d="M4.8 6.5h.01M4.8 12h.01M4.8 17.5h.01"/></svg>
         <span>Lançamentos</span>
+      </button>
+      <button class="tab" type="button" data-tab="cards">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>
+        <span>Cartão</span>
       </button>
       <button class="tab" type="button" data-tab="categories">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
@@ -642,6 +654,37 @@
         <button id="import-submit" class="btn primary" type="submit" disabled>Importar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="card-import-sheet" class="sheet" aria-labelledby="card-import-title">
+    <form id="card-import-form" method="dialog" novalidate>
+      <h3 id="card-import-title">Importar fatura do cartão</h3>
+      <p class="account-note">Escolha o PDF da fatura. Por enquanto só oferecemos suporte a faturas do Santander. O pagamento da fatura anterior não é importado — ele já entra pelo extrato da conta corrente.</p>
+
+      <label for="card-import-file">Arquivo</label>
+      <input id="card-import-file" type="file" accept=".pdf,application/pdf">
+
+      <p id="card-import-error" class="form-error" role="alert" hidden></p>
+
+      <div id="card-import-review" hidden>
+        <p id="card-import-summary" class="import-summary"></p>
+        <div id="card-import-cards"></div>
+      </div>
+
+      <div class="sheet-actions">
+        <button id="card-import-cancel" class="btn" type="button">Cancelar</button>
+        <button id="card-import-submit" class="btn primary" type="submit" disabled>Importar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="invoice-sheet" class="sheet" aria-labelledby="invoice-title">
+    <h3 id="invoice-title">Fatura</h3>
+    <p id="invoice-meta" class="account-note"></p>
+    <div id="invoice-groups"></div>
+    <div class="sheet-actions">
+      <button id="invoice-close" class="btn" type="button">Fechar</button>
+    </div>
   </dialog>
 
   <dialog id="delete-sheet" class="sheet" aria-labelledby="delete-title">

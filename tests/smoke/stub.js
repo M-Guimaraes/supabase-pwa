@@ -7,15 +7,17 @@
       { id: 'cat-sal', name: 'Salário', type: 'income', created_at: '2026-01-01' },
     ],
     transactions: [], recurring_transactions: [], budgets: [], bills: [], goals: [], category_rules: [],
+    credit_cards: [], card_invoices: [],
   };
   if (window.__seed) Object.assign(db, window.__seed);
   window.__db = db;
   const cb = {};
   function builder(table) {
-    const q = { table, op: 'select', filters: [], order: [], payload: null, opts: {}, wantRows: false };
+    const q = { table, op: 'select', filters: [], order: [], payload: null, opts: {}, wantRows: false, singleMode: null };
     const apply = (rows) => rows.filter((r) => q.filters.every((f) => f(r)));
     const run = () => {
       const rows = db[table];
+      let result;
       if (q.op === 'select') {
         let out = apply(rows).map((r) => ({ ...r }));
         for (const [c, asc] of q.order.slice().reverse()) {
@@ -23,9 +25,8 @@
         }
         if (q.range) out = out.slice(q.range[0], q.range[1] + 1);
         if (q.limit) out = out.slice(0, q.limit);
-        return { data: out, error: null };
-      }
-      if (q.op === 'insert' || q.op === 'upsert') {
+        result = { data: out, error: null };
+      } else if (q.op === 'insert' || q.op === 'upsert') {
         const list = Array.isArray(q.payload) ? q.payload : [q.payload];
         const inserted = [];
         for (const p of list) {
@@ -38,10 +39,16 @@
           const row = { id: uid(), created_at: new Date().toISOString(), user_id: 'u1', ...defaults, ...p };
           rows.push(row); inserted.push({ ...row });
         }
-        return { data: q.wantRows ? inserted : null, error: null };
+        result = { data: q.wantRows ? inserted : null, error: null };
+      } else if (q.op === 'update') {
+        apply(rows).forEach((r) => Object.assign(r, q.payload));
+        result = { data: null, error: null };
+      } else if (q.op === 'delete') {
+        db[table] = rows.filter((r) => !apply(rows).includes(r));
+        result = { data: null, error: null };
       }
-      if (q.op === 'update') { apply(rows).forEach((r) => Object.assign(r, q.payload)); return { data: null, error: null }; }
-      if (q.op === 'delete') { db[table] = rows.filter((r) => !apply(rows).includes(r)); return { data: null, error: null }; }
+      if (q.singleMode && Array.isArray(result.data)) result = { ...result, data: result.data[0] || null };
+      return result;
     };
     const api = {
       select(cols) { if (q.op !== 'select') q.wantRows = true; return api; },
@@ -59,6 +66,8 @@
       order(c, o) { q.order.push([c, !(o && o.ascending === false)]); return api; },
       limit(n) { q.limit = n; return api; },
       range(a, b) { q.range = [a, b]; return api; },
+      single() { if (q.op !== 'select') q.wantRows = true; q.singleMode = true; return api; },
+      maybeSingle() { if (q.op !== 'select') q.wantRows = true; q.singleMode = true; return api; },
       then(res, rej) { return Promise.resolve().then(run).then(res, rej); },
     };
     return api;

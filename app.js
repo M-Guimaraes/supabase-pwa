@@ -36,6 +36,8 @@
     goals: [],
     rules: [],
     rulesReady: true,
+    cards: [],
+    cardInvoices: [],
     securityShown: false,
     hints: null,
     hasAnyTx: true,
@@ -428,6 +430,24 @@
     state.goals = data.map((g) => ({ ...g, target_amount: Number(g.target_amount), saved_amount: Number(g.saved_amount) }));
   }
 
+  async function loadCards() {
+    const [cardsRes, invRes] = await Promise.all([
+      sb.from('credit_cards').select('id, name, last4').order('name'),
+      sb.from('card_invoices')
+        .select('id, card_id, period_start, period_end, due_on, total, min_payment, paid_on, paid_amount')
+        .order('due_on', { ascending: false }),
+    ]);
+    if (cardsRes.error) throw cardsRes.error;
+    if (invRes.error) throw invRes.error;
+    state.cards = cardsRes.data;
+    state.cardInvoices = invRes.data.map((i) => ({
+      ...i,
+      total: Number(i.total),
+      min_payment: i.min_payment == null ? null : Number(i.min_payment),
+      paid_amount: i.paid_amount == null ? null : Number(i.paid_amount),
+    }));
+  }
+
   // Lançamentos digitados à mão, do mais novo ao mais antigo: base das sugestões ao digitar.
   async function loadHints() {
     const { data, error } = await sb
@@ -666,7 +686,7 @@
       if (n > 0) toast(n === 1 ? '1 lançamento enviado' : `${n} lançamentos enviados`);
     });
     try {
-      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals(), loadRules()]);
+      await Promise.all([loadCategories(), loadRecurring(), loadBudgets(), loadBills(), loadGoals(), loadRules(), loadCards()]);
     } catch (err) {
       if (Offline.isNetworkError(err)) { offlineRefresh(); return; }
       toast(friendlyError(err));
@@ -756,6 +776,7 @@
     renderBudgetSettings();
     renderBills();
     renderGoals();
+    renderCards();
     renderOnboarding();
     renderTrend();
   }
@@ -2467,6 +2488,7 @@
     source: new Map(),
     invert: false,
     token: 0,
+    cardMatch: new Map(),
   };
 
   function fmtDate(d) { return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`; }
@@ -2604,14 +2626,32 @@
     return imp.similar.has(`${item.date}|${v.amount.toFixed(2)}|${v.type}`);
   }
 
-  // Marca os novos (menos os parecidos com lançamentos manuais) e sugere categorias.
+  // Um lançamento do extrato cujo valor bate com o total de uma fatura ainda em aberto
+  // é, com grande chance, o pagamento dela — não deve virar despesa de novo, já que as
+  // compras da fatura já entraram como despesa quando ela foi importada.
+  function computeCardMatches() {
+    imp.cardMatch = new Map();
+    const unpaid = state.cardInvoices.filter((i) => !i.paid_on);
+    const used = new Set();
+    imp.items.forEach((item, i) => {
+      if (isDup(item)) return;
+      const v = Importer.view(item, imp.invert);
+      if (v.type !== 'expense') return;
+      const hit = unpaid.find((inv) => !used.has(inv.id) && Math.abs(inv.total - v.amount) < 0.01);
+      if (hit) { imp.cardMatch.set(i, hit); used.add(hit.id); }
+    });
+  }
+
+  // Marca os novos (menos os parecidos com lançamentos manuais e os que batem com uma
+  // fatura em aberto) e sugere categorias.
   function resetSelection() {
+    computeCardMatches();
     imp.selected = new Set();
     imp.category = new Map();
     imp.source = new Map();
     imp.items.forEach((item, i) => {
       const dup = isDup(item);
-      if (!dup && !isSimilar(item)) imp.selected.add(i);
+      if (!dup && !isSimilar(item) && !imp.cardMatch.has(i)) imp.selected.add(i);
       const v = Importer.view(item, imp.invert);
       const past = imp.suggestions && imp.suggestions.get(`${v.type}|${Importer.descriptionKey(item.description)}`);
       const guess = Classifier.classify(state.rules, state.categories, v.type, item.description, past);
@@ -2636,8 +2676,13 @@
       `Selecionados: ${imp.selected.size}. Receitas ${brl.format(income)}, despesas ${brl.format(expense)}.`;
 
     const n = imp.selected.size;
-    $('import-submit').disabled = n === 0;
-    $('import-submit').textContent = n ? `Importar ${n}` : 'Importar';
+    const payments = imp.cardMatch.size;
+    $('import-submit').disabled = n === 0 && payments === 0;
+    $('import-submit').textContent = n
+      ? `Importar ${n}`
+      : payments
+      ? (payments === 1 ? 'Marcar 1 fatura como paga' : `Marcar ${payments} faturas como pagas`)
+      : 'Importar';
     $('import-all').checked = n > 0 && n === total - dups;
   }
 
@@ -2662,7 +2707,12 @@
       });
 
       const text = el('span', 'import-text');
-      const note = dup ? (imp.existing.has(item.externalId) ? 'Já importado' : 'Já importado de outro arquivo') : similar ? 'Parecido com um lançamento seu' : '';
+      const cardMatch = imp.cardMatch.get(i);
+      const cardName = cardMatch && (state.cards.find((c) => c.id === cardMatch.card_id) || {}).name;
+      const note = dup
+        ? (imp.existing.has(item.externalId) ? 'Já importado' : 'Já importado de outro arquivo')
+        : cardMatch ? `Pagamento da fatura${cardName ? ` do ${cardName}` : ''} — não importa como despesa`
+        : similar ? 'Parecido com um lançamento seu' : '';
       const subText = () => {
         const src = imp.source.get(i);
         const how = !dup && src && imp.category.get(i) ? (src === 'rule' ? 'categoria por regra' : 'categoria pelo histórico') : '';
@@ -2801,34 +2851,83 @@
 
   $('import-cancel').addEventListener('click', () => importSheet.close());
 
-  // Junta os textos do PDF em linhas (agrupando por posição vertical), uma por "linha
-  // visual" da tabela, pra Importer.parsePDFStatement() ler como se fosse texto puro.
+  // Agrupa os itens de uma página em linhas (por posição vertical), uma por "linha
+  // visual" da tabela, juntando os textos de cada linha da esquerda pra direita.
+  function pdfLinesFromItems(items) {
+    const rows = new Map();
+    for (const it of items) {
+      const y = Math.round(it.transform[5]);
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push(it);
+    }
+    const ys = [...rows.keys()].sort((a, b) => b - a);
+    const out = [];
+    for (const y of ys) {
+      const row = rows.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
+      let line = '';
+      let lastEnd = null;
+      for (const it of row) {
+        const x = it.transform[4];
+        if (lastEnd !== null && x - lastEnd > 1) line += ' ';
+        line += it.str;
+        lastEnd = x + it.width;
+      }
+      if (line.trim()) out.push(line.trim());
+    }
+    return out;
+  }
+
+  // Divide os itens da página em colunas quando há um vão vertical claro no meio
+  // (layout de duas colunas, comum em faturas de cartão); senão devolve a página
+  // inteira como coluna só, pra não bagunçar documentos de uma coluna (extratos).
+  function pdfSplitColumns(items) {
+    const xs = items.map((it) => it.transform[4]).sort((a, b) => a - b);
+    const minX = xs[0];
+    const width = xs[xs.length - 1] - minX;
+    if (width < 200) return [items];
+    const loBound = minX + width * 0.3;
+    const hiBound = minX + width * 0.7;
+    let bestGap = 0;
+    let splitAt = null;
+    for (let i = 1; i < xs.length; i++) {
+      const x = xs[i];
+      if (x < loBound || x > hiBound) continue;
+      const gap = x - xs[i - 1];
+      if (gap > bestGap) { bestGap = gap; splitAt = (x + xs[i - 1]) / 2; }
+    }
+    if (splitAt === null || bestGap < width * 0.08) return [items];
+
+    // Só é layout de duas colunas de verdade se a maioria das linhas (por posição
+    // vertical) pertence inteiramente a um lado só do vão. Numa tabela larga só com
+    // colunas internas espaçadas (como um extrato), quase toda linha tem conteúdo nos
+    // dois lados de qualquer vão que caia no meio dela.
+    const rowSides = new Map();
+    for (const it of items) {
+      const y = Math.round(it.transform[5]);
+      const side = it.transform[4] < splitAt ? 'l' : 'r';
+      if (!rowSides.has(y)) rowSides.set(y, new Set());
+      rowSides.get(y).add(side);
+    }
+    let bothSides = 0;
+    for (const sides of rowSides.values()) if (sides.size === 2) bothSides++;
+    if (bothSides / rowSides.size > 0.25) return [items];
+
+    const left = items.filter((it) => it.transform[4] < splitAt);
+    const right = items.filter((it) => it.transform[4] >= splitAt);
+    if (left.length < 3 || right.length < 3) return [items];
+    return [left, right];
+  }
+
+  // Junta o texto do PDF inteiro em linhas, pra Importer ler como se fosse texto puro.
   async function extractPdfText(buffer) {
     const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
     const lines = [];
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p);
       const content = await page.getTextContent();
-      const rows = new Map();
-      for (const item of content.items) {
-        if (!item.str) continue;
-        const y = Math.round(item.transform[5]);
-        if (!rows.has(y)) rows.set(y, []);
-        rows.get(y).push(item);
-      }
-      const ys = [...rows.keys()].sort((a, b) => b - a);
-      for (const y of ys) {
-        const row = rows.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
-        let line = '';
-        let lastEnd = null;
-        for (const it of row) {
-          const x = it.transform[4];
-          if (lastEnd !== null && x - lastEnd > 1) line += ' ';
-          line += it.str;
-          lastEnd = x + it.width;
-        }
-        if (line.trim()) lines.push(line.trim());
-      }
+      const items = content.items.filter((it) => it.str && it.str.trim());
+      if (!items.length) continue;
+      for (const col of pdfSplitColumns(items)) lines.push(...pdfLinesFromItems(col));
     }
     return lines.join('\n');
   }
@@ -2897,9 +2996,13 @@
   $('import-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const rows = [];
+    const invoicePayments = [];
     imp.items.forEach((item, i) => {
-      if (!imp.selected.has(i) || isDup(item)) return;
+      if (isDup(item)) return;
       const v = Importer.view(item, imp.invert);
+      const cardMatch = imp.cardMatch.get(i);
+      if (cardMatch) invoicePayments.push({ invoice: cardMatch, date: item.date, amount: v.amount });
+      if (!imp.selected.has(i)) return;
       rows.push({
         user_id: state.userId,
         type: v.type,
@@ -2910,7 +3013,7 @@
         external_id: item.externalId,
       });
     });
-    if (rows.length === 0) return;
+    if (rows.length === 0 && invoicePayments.length === 0) return;
 
     const submit = $('import-submit');
     submit.disabled = true;
@@ -2926,6 +3029,10 @@
         inserted += data.length;
         submit.textContent = `Importando ${Math.min(i + 100, rows.length)} de ${rows.length}`;
       }
+      for (const p of invoicePayments) {
+        const { error } = await sb.from('card_invoices').update({ paid_on: p.date, paid_amount: p.amount }).eq('id', p.invoice.id);
+        if (error) throw error;
+      }
     } catch (err) {
       showImportError(
         friendlyError(err) +
@@ -2936,11 +3043,263 @@
     }
 
     importSheet.close();
-    const latest = rows.map((r) => r.occurred_on).sort().pop();
-    state.month = firstOfMonth(parseYmd(latest));
+    if (rows.length) {
+      const latest = rows.map((r) => r.occurred_on).sort().pop();
+      state.month = firstOfMonth(parseYmd(latest));
+    }
     const already = rows.length - inserted;
-    toast(`${inserted} lançamentos importados` + (already ? `, ${already} já existiam` : ''));
+    const paidMsg = invoicePayments.length
+      ? `${invoicePayments.length === 1 ? '1 fatura marcada como paga' : `${invoicePayments.length} faturas marcadas como pagas`}`
+      : '';
+    toast(
+      [inserted ? `${inserted} lançamentos importados` + (already ? `, ${already} já existiam` : '') : '', paidMsg]
+        .filter(Boolean)
+        .join(' · ') || 'Nada novo para importar'
+    );
     await refresh();
+  });
+
+  /* ---------- Cartão de crédito ---------- */
+
+  function renderCards() {
+    const box = $('cards-list');
+    box.replaceChildren();
+    $('cards-empty').hidden = state.cards.length > 0;
+    for (const card of state.cards) {
+      const invoices = state.cardInvoices.filter((i) => i.card_id === card.id);
+      const group = el('details', 'group');
+      const summary = document.createElement('summary');
+      summary.append(
+        el('span', 'group-title', card.last4 ? `${card.name} ····${card.last4}` : card.name),
+        el('span', 'group-hint', invoices.length ? `${invoices.length} fatura${invoices.length === 1 ? '' : 's'}` : 'Sem faturas ainda')
+      );
+      const body = el('div', 'group-body');
+      const ul = el('ul', 'cat-list');
+      for (const inv of invoices) {
+        const li = el('li');
+        const text = el('span', 'bill-text');
+        const status = inv.paid_on
+          ? `Paga em ${fmtDate(inv.paid_on)}`
+          : 'Em aberto';
+        text.append(
+          el('span', 'title', `Vencimento ${fmtDate(inv.due_on)}`),
+          el('span', `sub ${inv.paid_on ? 'paid' : 'open'}`, `${brl.format(inv.total)} · ${status}`)
+        );
+        const view = el('button', 'btn small', 'Ver');
+        view.type = 'button';
+        view.addEventListener('click', () => openInvoiceSheet(inv, card));
+        li.append(text, view);
+        ul.append(li);
+      }
+      body.append(ul);
+      group.append(summary, body);
+      box.append(group);
+    }
+  }
+
+  const invoiceSheet = $('invoice-sheet');
+
+  async function openInvoiceSheet(invoice, card) {
+    $('invoice-title').textContent = card.last4 ? `Fatura — ${card.name} ····${card.last4}` : `Fatura — ${card.name}`;
+    const status = invoice.paid_on
+      ? `Paga em ${fmtDate(invoice.paid_on)} (${brl.format(invoice.paid_amount)})`
+      : 'Em aberto';
+    $('invoice-meta').textContent =
+      `Vencimento ${fmtDate(invoice.due_on)} · Total ${brl.format(invoice.total)} · ${status}`;
+    const box = $('invoice-groups');
+    box.replaceChildren();
+    invoiceSheet.showModal();
+
+    const { data, error } = await sb
+      .from('transactions')
+      .select('id, type, amount, description, category_id, occurred_on')
+      .eq('card_invoice_id', invoice.id)
+      .order('occurred_on');
+    if (error) { toast(friendlyError(error)); return; }
+    const rows = data.map((t) => ({ ...t, amount: Number(t.amount) }));
+    if (rows.length === 0) { box.append(el('p', 'empty', 'Nenhuma compra nesta fatura.')); return; }
+
+    const byDay = new Map();
+    for (const t of rows) {
+      if (!byDay.has(t.occurred_on)) byDay.set(t.occurred_on, []);
+      byDay.get(t.occurred_on).push(t);
+    }
+    for (const [day, items] of byDay) {
+      const group = el('section', 'day');
+      group.append(el('h3', '', dayFmt.format(parseYmd(day))));
+      for (const t of items) {
+        const btn = el('button', `tx ${t.type}`);
+        btn.type = 'button';
+        const info = el('span', 'info');
+        info.append(
+          el('span', 'title', t.description || categoryName(t.category_id)),
+          el('span', 'sub', categoryName(t.category_id))
+        );
+        btn.append(el('span', 'dot'), info, el('span', 'amount', '− ' + brl.format(t.amount)));
+        btn.addEventListener('click', () => { invoiceSheet.close(); openSheet(t); });
+        group.append(btn);
+      }
+      box.append(group);
+    }
+  }
+
+  $('invoice-close').addEventListener('click', () => invoiceSheet.close());
+
+  const cardImportSheet = $('card-import-sheet');
+  let cardImp = { result: null };
+
+  $('card-import-open').addEventListener('click', () => {
+    cardImp = { result: null };
+    $('card-import-file').value = '';
+    $('card-import-error').hidden = true;
+    $('card-import-review').hidden = true;
+    $('card-import-submit').disabled = true;
+    cardImportSheet.showModal();
+  });
+
+  $('card-import-cancel').addEventListener('click', () => cardImportSheet.close());
+
+  function showCardImportError(msg) {
+    $('card-import-error').textContent = msg;
+    $('card-import-error').hidden = false;
+  }
+
+  function renderCardImportReview(result) {
+    const totalItems = result.cards.reduce((s, c) => s + c.items.length, 0);
+    $('card-import-summary').textContent =
+      `Vencimento ${fmtDate(result.invoice.dueOn)} · Total ${brl.format(result.invoice.total)} · ` +
+      `${totalItems} compra${totalItems === 1 ? '' : 's'}`;
+    const box = $('card-import-cards');
+    box.replaceChildren();
+    for (const card of result.cards) {
+      const total = card.items.reduce((s, it) => s - it.signed, 0);
+      const group = el('details', 'group');
+      const summary = document.createElement('summary');
+      summary.append(
+        el('span', 'group-title', `${card.name} ····${card.last4}`),
+        el('span', 'group-hint', `${card.items.length} compras · ${brl.format(total)}`)
+      );
+      const body = el('div', 'group-body');
+      const ul = el('ul', 'cat-list');
+      for (const it of card.items) {
+        const li = el('li');
+        const text = el('span', 'bill-text');
+        text.append(el('span', 'title', it.description), el('span', 'sub', `${fmtDate(it.date)} · ${brl.format(-it.signed)}`));
+        li.append(text);
+        ul.append(li);
+      }
+      body.append(ul);
+      group.append(summary, body);
+      box.append(group);
+    }
+  }
+
+  $('card-import-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $('card-import-error').hidden = true;
+    $('card-import-review').hidden = true;
+    $('card-import-submit').disabled = true;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showCardImportError('Arquivo grande demais. O máximo é 5 MB.');
+      return;
+    }
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    if (!isPdf) {
+      showCardImportError('Envie o PDF da fatura.');
+      return;
+    }
+    try {
+      const text = await extractPdfText(await file.arrayBuffer());
+      const result = Importer.parseCardInvoicePDF(text);
+      if (!result) {
+        showCardImportError('Não reconheci esse PDF. Por enquanto só oferecemos suporte a faturas do Santander.');
+        return;
+      }
+      cardImp.result = result;
+      renderCardImportReview(result);
+      $('card-import-review').hidden = false;
+      $('card-import-submit').disabled = false;
+    } catch (err) {
+      showCardImportError(friendlyError(err));
+    }
+  });
+
+  $('card-import-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const result = cardImp.result;
+    if (!result) return;
+    if (!navigator.onLine) { showCardImportError('Sem conexão: importar precisa de internet.'); return; }
+
+    const submit = $('card-import-submit');
+    submit.disabled = true;
+    $('card-import-error').hidden = true;
+    try {
+      let totalInserted = 0;
+      for (const card of result.cards) {
+        let cardId = (state.cards.find((c) => c.last4 === card.last4) || {}).id;
+        if (!cardId) {
+          const { data, error } = await sb.from('credit_cards').insert({ name: card.name, last4: card.last4 }).select('id').single();
+          if (error) throw error;
+          cardId = data.id;
+        }
+
+        const { data: existingInv, error: findErr } = await sb
+          .from('card_invoices').select('id').eq('card_id', cardId).eq('due_on', result.invoice.dueOn).maybeSingle();
+        if (findErr) throw findErr;
+        let invoiceId = existingInv && existingInv.id;
+        if (invoiceId) {
+          const { error } = await sb.from('card_invoices').update({
+            period_start: result.invoice.periodStart,
+            period_end: result.invoice.periodEnd,
+            total: result.invoice.total,
+            min_payment: result.invoice.minPayment,
+          }).eq('id', invoiceId);
+          if (error) throw error;
+        } else {
+          const { data, error } = await sb.from('card_invoices').insert({
+            card_id: cardId,
+            period_start: result.invoice.periodStart,
+            period_end: result.invoice.periodEnd,
+            due_on: result.invoice.dueOn,
+            total: result.invoice.total,
+            min_payment: result.invoice.minPayment,
+          }).select('id').single();
+          if (error) throw error;
+          invoiceId = data.id;
+        }
+
+        const rows = card.items.map((it, idx) => {
+          const guess = Classifier.classify(state.rules, state.categories, 'expense', it.description, null);
+          return {
+            user_id: state.userId,
+            type: 'expense',
+            amount: -it.signed,
+            description: it.description || null,
+            category_id: guess ? guess.id : null,
+            occurred_on: it.date,
+            card_invoice_id: invoiceId,
+            external_id: `card:${card.last4}:${result.invoice.dueOn}:${idx}`,
+          };
+        });
+        for (let i = 0; i < rows.length; i += 100) {
+          const { data, error } = await sb
+            .from('transactions')
+            .upsert(rows.slice(i, i + 100), { onConflict: 'user_id,external_id', ignoreDuplicates: true })
+            .select('id');
+          if (error) throw error;
+          totalInserted += data.length;
+        }
+      }
+      cardImportSheet.close();
+      toast(totalInserted ? `${totalInserted} compras importadas` : 'Fatura já estava importada');
+      await refresh();
+    } catch (err) {
+      showCardImportError(friendlyError(err));
+    } finally {
+      submit.disabled = false;
+    }
   });
 
   /* ---------- Excluir conta ---------- */

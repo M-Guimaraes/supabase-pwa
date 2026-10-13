@@ -376,6 +376,163 @@
     },
   };
 
+  /* ---------- PDF (faturas de cartão de crédito) ----------
+   * Formato diferente do extrato: devolve { invoice, cards }, não uma lista plana de
+   * itens — a fatura pode ter mais de um cartão (titular + adicionais) e os valores do
+   * cabeçalho (vencimento, total, mínimo) viram uma fatura à parte, não um lançamento.
+   */
+
+  // Linhas de rodapé (IOF, tarifa de boleto) que vêm junto da compra que as gerou, não
+  // são lançamentos à parte — entram no valor do lançamento anterior.
+  const FEE_LABEL_RE = /^(iof( despesa no exterior)?|tarifa pagamentocontas)$/i;
+
+  // Tira o "nº parcela/total" (ex: "06/10") do fim da descrição, quando houver.
+  function stripInstallment(desc) {
+    const m = desc.match(/^(.*?)\s+(\d{1,2}\/\d{1,2})$/);
+    return m ? { desc: m[1], installment: m[2] } : { desc, installment: null };
+  }
+
+  const SANTANDER_FATURA_SCHEMA = {
+    name: 'santander-fatura',
+    detect: (text) => /fatura do seu cart[aã]o/i.test(text) && /santander/i.test(text),
+    parse(text) {
+      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const full = lines.join('\n');
+
+      const totalM = full.match(/pagamento total\s*r\$\s*([\d.,]+)/i);
+      const minM = full.match(/pagamento m[ií]nimo\s*r\$\s*([\d.,]+)/i);
+      const dueM = full.match(/vencimento[\s\S]{0,60}?(\d{2}\/\d{2}\/\d{4})/i);
+      const periodM = full.match(/esta fatura\s+(\d{2}\/\d{2}\/\d{2,4})\s+a\s+(\d{2}\/\d{2}\/\d{2,4})/i);
+      if (!totalM || !dueM || !periodM) return null;
+
+      const toIso = (d) => {
+        const [dd, mo, y] = d.split('/');
+        return parseDate(`${dd}/${mo}/${y.length === 2 ? `20${y}` : y}`);
+      };
+
+      const invoice = {
+        total: parseNumber(totalM[1], 'comma'),
+        minPayment: minM ? parseNumber(minM[1], 'comma') : null,
+        dueOn: toIso(dueM[1]),
+        periodStart: toIso(periodM[1]),
+        periodEnd: toIso(periodM[2]),
+      };
+      const year = invoice.periodEnd.slice(0, 4);
+
+      const detIdx = lines.findIndex((l) => /^detalhamento da fatura$/i.test(l));
+      if (detIdx < 0) return null;
+
+      const STOP_RE = /^(resumo da fatura|saldo total consolidado|juros e custo efetivo|d[ée]bito autom[aá]tico)/i;
+      const HEADER_RE = /^compra\s+data\s+descri[cç][aã]o/i;
+      const CARD_RE = /^@?\s*(.+?)\s*-\s*(\d{4}(?:\s*[X\d]{4}){2,3})\s*$/i;
+
+      let cardName = null;
+      let cardLast4 = null;
+      // 'despesas' | 'parcelamentos' | 'credits' | null. "Pagamento e Demais Créditos"
+      // é só o pagamento da fatura anterior, já contabilizado via extrato bancário.
+      let section = null;
+      let currentDate = null;
+      let lastIdx = null;
+      const byCard = new Map();
+
+      const cardItems = () => {
+        if (!byCard.has(cardLast4)) byCard.set(cardLast4, { name: cardName, items: [] });
+        return byCard.get(cardLast4).items;
+      };
+      const push = (date, desc, signed) => {
+        const list = cardItems();
+        list.push({ date, description: cleanDescription(desc), signed, externalId: null });
+        lastIdx = list.length - 1;
+      };
+      const mergeFee = (amount) => {
+        if (lastIdx !== null) cardItems()[lastIdx].signed -= amount;
+      };
+      const appendTrailing = (text) => {
+        if (lastIdx === null) return;
+        const list = cardItems();
+        list[lastIdx].description = cleanDescription(`${list[lastIdx].description} ${text}`);
+      };
+
+      for (let i = detIdx + 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (STOP_RE.test(line)) break;
+        if (/^valor total\b/i.test(line)) { section = null; continue; }
+
+        const cardM = line.match(CARD_RE);
+        if (cardM) {
+          cardName = cardM[1].trim();
+          cardLast4 = cardM[2].replace(/\D/g, '').slice(-4);
+          section = null; currentDate = null; lastIdx = null;
+          continue;
+        }
+        if (/^detalhamento da fatura$/i.test(line)) continue;
+        if (/^despesas$/i.test(line)) { section = 'despesas'; currentDate = null; lastIdx = null; continue; }
+        if (/^parcelamentos$/i.test(line)) { section = 'parcelamentos'; currentDate = null; lastIdx = null; continue; }
+        if (/^pagamento e demais cr[eé]ditos$/i.test(line)) { section = 'credits'; continue; }
+        if (HEADER_RE.test(line)) continue;
+        if (/^\*/.test(line)) continue; // nota de rodapé (ex: "*Juros = 9,16 / IOF = 1,62")
+        if (!cardLast4 || !section || section === 'credits') continue;
+
+        if (section === 'parcelamentos') {
+          // Cada linha é independente: a data mostrada é a da compra original (pode
+          // ser de qualquer mês/ano anterior) — descartada, já que a parcela conta no
+          // mês desta fatura, não no mês da compra.
+          let rest = line;
+          const m = line.match(DATE_PREFIX_RE);
+          if (m) rest = m[2];
+          const tokens = rest.split(/\s+/).filter(Boolean);
+          const split = tokens.length ? splitTrailingValues(tokens) : null;
+          if (!split) {
+            if (rest && !isNumericOnly(rest)) appendTrailing(rest);
+            continue;
+          }
+          if (!split.desc || FEE_LABEL_RE.test(split.desc)) {
+            mergeFee(parseNumber(split.movimento, 'comma'));
+            continue;
+          }
+          const { desc, installment } = stripInstallment(split.desc);
+          const signed = parseNumber(split.movimento, 'comma');
+          if (signed === null || signed === 0) continue;
+          push(invoice.periodEnd, installment ? `${desc} (parcela ${installment})` : desc, -signed);
+          continue;
+        }
+
+        // section === 'despesas'
+        let rest = line;
+        const m = line.match(DATE_PREFIX_RE);
+        if (m) {
+          const tokensAfterDate = m[2].split(/\s+/).filter(Boolean);
+          if (tokensAfterDate.length && splitTrailingValues(tokensAfterDate)) {
+            currentDate = parseDate(`${m[1]}/${year}`);
+            lastIdx = null;
+            rest = m[2];
+          }
+        }
+        const tokens = rest.split(/\s+/).filter(Boolean);
+        const split = tokens.length ? splitTrailingValues(tokens) : null;
+        if (!split) {
+          if (rest && !isNumericOnly(rest)) appendTrailing(rest);
+          continue;
+        }
+        if (!split.desc || FEE_LABEL_RE.test(split.desc)) {
+          mergeFee(parseNumber(split.movimento, 'comma'));
+          continue;
+        }
+        const { desc, installment } = stripInstallment(split.desc);
+        const signed = parseNumber(split.movimento, 'comma');
+        if (!currentDate || signed === null || signed === 0) continue;
+        push(currentDate, installment ? `${desc} (parcela ${installment})` : desc, -signed);
+      }
+
+      return { invoice, cards: [...byCard.entries()].map(([last4, v]) => ({ last4, name: v.name, items: v.items })) };
+    },
+  };
+
+  // Devolve { invoice, cards } se reconhecer a fatura, ou null.
+  function parseCardInvoicePDF(text) {
+    return SANTANDER_FATURA_SCHEMA.detect(text) ? SANTANDER_FATURA_SCHEMA.parse(text) : null;
+  }
+
   const PDF_SCHEMAS = [SANTANDER_SCHEMA];
 
   // Devolve { items, skipped } se algum schema reconhecer o PDF, ou null se nenhum reconheceu.
@@ -509,6 +666,6 @@
     crossDuplicates, findImportedDuplicates,
     decodeBytes, parseDate, parseNumber, detectNumberStyle, analyzeCSV, autoMap,
     mappingIsComplete, csvToItems, isOFX, parseOFX, withIds, parseStatement, view,
-    descriptionKey, parsePDFStatement,
+    descriptionKey, parsePDFStatement, parseCardInvoicePDF,
   };
 });

@@ -286,3 +286,63 @@ create policy "category_rules_delete_own" on public.category_rules
 create policy "require_aal2_if_enrolled" on public.category_rules
   as restrictive for all to authenticated
   using ((select private.aal_ok())) with check ((select private.aal_ok()));
+
+-- Cartões de crédito do usuário.
+create table public.credit_cards (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name text not null,
+  last4 text,
+  created_at timestamptz not null default now()
+);
+create index credit_cards_user_id_idx on public.credit_cards (user_id);
+alter table public.credit_cards enable row level security;
+create policy "credit_cards_select_own" on public.credit_cards
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "credit_cards_insert_own" on public.credit_cards
+  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "credit_cards_update_own" on public.credit_cards
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "credit_cards_delete_own" on public.credit_cards
+  for delete to authenticated using (user_id = (select auth.uid()));
+create policy "require_aal2_if_enrolled" on public.credit_cards
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+
+-- Faturas: uma por cartão/vencimento. O pagamento (do extrato bancário) baixa a fatura
+-- direto aqui (paid_on/paid_amount) e não vira uma despesa separada em transactions,
+-- pra não contar o valor duas vezes (as compras da fatura já são despesas por si só).
+create table public.card_invoices (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  card_id uuid not null references public.credit_cards (id) on delete cascade,
+  period_start date not null,
+  period_end date not null,
+  due_on date not null,
+  total numeric(12, 2) not null check (total >= 0),
+  min_payment numeric(12, 2),
+  paid_on date,
+  paid_amount numeric(12, 2),
+  created_at timestamptz not null default now(),
+  unique (user_id, card_id, due_on)
+);
+create index card_invoices_user_id_idx on public.card_invoices (user_id);
+create index card_invoices_card_id_idx on public.card_invoices (card_id);
+alter table public.card_invoices enable row level security;
+create policy "card_invoices_select_own" on public.card_invoices
+  for select to authenticated using (user_id = (select auth.uid()));
+create policy "card_invoices_insert_own" on public.card_invoices
+  for insert to authenticated with check (user_id = (select auth.uid()));
+create policy "card_invoices_update_own" on public.card_invoices
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "card_invoices_delete_own" on public.card_invoices
+  for delete to authenticated using (user_id = (select auth.uid()));
+create policy "require_aal2_if_enrolled" on public.card_invoices
+  as restrictive for all to authenticated
+  using ((select private.aal_ok())) with check ((select private.aal_ok()));
+
+-- Compras do cartão viram transactions normais (entram em categorias, orçamento,
+-- resumo...), só marcadas com a fatura a que pertencem.
+alter table public.transactions
+  add column card_invoice_id uuid references public.card_invoices (id) on delete set null;
+create index transactions_card_invoice_idx on public.transactions (card_invoice_id);
