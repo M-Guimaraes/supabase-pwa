@@ -1,0 +1,122 @@
+/*
+ * Design tokens do Caixa — fonte única da identidade visual.
+ *
+ * Qualquer ajuste de fonte, cor ou raio deve começar (e normalmente terminar) aqui.
+ * O resto do app (styles.css) só consome essas variáveis — não redeclara cores.
+ *
+ * Paleta: preto, cinza e branco (ar sóbrio). As únicas cores fora da escala de
+ * cinza são semânticas — positivo/negativo/aviso e as séries do gráfico — e
+ * existem pra manter a leitura rápida de um extrato financeiro, não como marca.
+ */
+
+/* ---------- Tipografia ---------- */
+
+@font-face {
+  font-family: "Plex Serif";
+  src: url("fonts/plex-serif-400.woff") format("woff");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Plex Serif";
+  src: url("fonts/plex-serif-700.woff") format("woff");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("fonts/instrument-sans-400.woff") format("woff");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("fonts/instrument-sans-700.woff") format("woff");
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  /* Valores em dinheiro: Plex Serif. Texto de interface: Instrument Sans. */
+  --serif: "Plex Serif", "IBM Plex Serif", Charter, "Bitstream Charter", Georgia, serif;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* ---------- Cores neutras (identidade) ---------- */
+  --bg: #f6f6f5;
+  --surface: #ffffff;
+  --tint: #ececea;
+  --ink: #141414;
+  --ink-soft: #68686a;
+  --line: #e1e0dd;
+  --line-strong: #c6c4bf;
+
+  /* Marca: preto/grafite — usada em botão primário, cabeçalho de saldo, FAB. */
+  --brand: #141414;
+  --brand-hover: #2b2b2b;
+  --brand-wash: rgba(20, 20, 20, 0.06);
+  --on-brand: #fafafa;
+  --on-brand-soft: rgba(250, 250, 250, 0.72);
+  --on-brand-line: rgba(250, 250, 250, 0.18);
+
+  /* Acento: cinza grafite — foco, aba ativa, destaques (substitui o antigo latão). */
+  --accent: #4b4b4b;
+  --accent-soft: #e7e6e3;
+  --accent-on-brand: #cfcfcf;
+
+  /* ---------- Cores semânticas (não fazem parte da identidade) ---------- */
+  /* Mantidas em verde/vermelho: leitura rápida de receita x despesa num extrato. */
+  --pos: #1c7a46;
+  --pos-bg: #e1ece2;
+  --pos-on-brand: #86e3b9;
+  --neg: #a23a30;
+  --neg-bg: #f1e2de;
+  --neg-on-brand: #ffb0bb;
+  --warn: #7a5d12;
+  --warn-bar: #b98f24;
+  --focus: var(--accent);
+
+  /* Séries do gráfico (receita/despesa). Despesa em tom neutro, não azul vivo. */
+  --series-income: #1c7a46;
+  --series-expense: #51586b;
+
+  /* ---------- Formato ---------- */
+  --radius: 10px;
+  --sheet-radius: 20px;
+  --tabbar-h: 64px;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0a0a;
+    --surface: #161616;
+    --tint: #1f1f1e;
+    --ink: #f2f2f0;
+    --ink-soft: #a0a09c;
+    --line: #2a2a28;
+    --line-strong: #3d3d3a;
+
+    --brand: #2c2c29;
+    --brand-hover: #3a3a36;
+    --brand-wash: rgba(255, 255, 255, 0.06);
+    --on-brand: #f5f5f3;
+    --on-brand-soft: rgba(245, 245, 243, 0.72);
+    --on-brand-line: rgba(245, 245, 243, 0.18);
+
+    --accent: #b9b9b4;
+    --accent-soft: #2a2a28;
+    --accent-on-brand: #d8d8d4;
+
+    --pos: #5bc78f;
+    --pos-bg: #15402f;
+    --neg: #ff9186;
+    --neg-bg: #46201d;
+    --warn: #e3c15c;
+    --warn-bar: #e3c15c;
+    --focus: var(--accent);
+
+    --series-income: #37b37e;
+    --series-expense: #8d97ad;
+  }
+}

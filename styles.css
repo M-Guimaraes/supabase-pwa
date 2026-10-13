@@ -1,99 +1,10 @@
 /*
- * Caixa. Identidade: extrato de banco.
+ * Caixa. Identidade: extrato de banco, em tons de preto, cinza e branco.
+ * - Cores e fontes vêm de design-tokens.css — este arquivo só consome variáveis.
  * - Valores em dinheiro sempre em Plex Serif (algarismos tabulares); texto em Instrument Sans.
  * - Linhas finas separam lançamentos, como num extrato, em vez de cartões soltos.
  * - Um único gesto decorativo: o padrão de cédula (guilloche) no cartão de saldo e na entrada.
  */
-
-@font-face {
-  font-family: "Plex Serif";
-  src: url("fonts/plex-serif-400.woff") format("woff");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Plex Serif";
-  src: url("fonts/plex-serif-700.woff") format("woff");
-  font-weight: 700;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Instrument Sans";
-  src: url("fonts/instrument-sans-400.woff") format("woff");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Instrument Sans";
-  src: url("fonts/instrument-sans-700.woff") format("woff");
-  font-weight: 700;
-  font-display: swap;
-}
-
-:root {
-  /* Fundo e superfícies levemente aquecidos (papel de extrato, não cinza de sistema). */
-  --bg: #f1efe7;
-  --surface: #fdfcf8;
-  --tint: #eae5d7;
-  --ink: #10232a;
-  --ink-soft: #57666a;
-  --line: #ddd5c2;
-  --line-strong: #c0b393;
-  --brand: #0b3c49;
-  --brand-hover: #0f4f60;
-  --brand-wash: rgba(11, 60, 73, 0.08);
-  --on-brand: #f2f6f6;
-  --on-brand-soft: rgba(242, 246, 246, 0.74);
-  --on-brand-line: rgba(242, 246, 246, 0.2);
-  /* Latão: o único acento fora do par teal/papel — reservado pra foco e destaques. */
-  --accent: #96641c;
-  --accent-soft: #f1e3c4;
-  --accent-on-brand: #e7c077;
-  --pos: #1c7a46;
-  --pos-bg: #dfead4;
-  --pos-on-brand: #86e3b9;
-  --neg: #a23a30;
-  --neg-bg: #f3ddd1;
-  --neg-on-brand: #ffb0bb;
-  --warn: #86570a;
-  --warn-bar: #c48a12;
-  --focus: var(--accent);
-  --series-income: #1c7a46;
-  --series-expense: #2f6fde;
-  --radius: 10px;
-  --sheet-radius: 20px;
-  --tabbar-h: 64px;
-  --serif: "Plex Serif", "IBM Plex Serif", Charter, "Bitstream Charter", Georgia, serif;
-  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0c1619;
-    --surface: #13221f;
-    --tint: #1a2b28;
-    --ink: #eceee5;
-    --ink-soft: #99a69e;
-    --line: #253a35;
-    --line-strong: #3a5349;
-    --brand: #11505f;
-    --brand-hover: #176073;
-    --brand-wash: rgba(124, 195, 211, 0.1);
-    --accent: #e3b65c;
-    --accent-soft: #3a2f16;
-    --accent-on-brand: #f0cd87;
-    --pos: #5bc78f;
-    --pos-bg: #15402f;
-    --neg: #ff9186;
-    --neg-bg: #46201d;
-    --warn: #f2c14e;
-    --warn-bar: #f2c14e;
-    --focus: var(--accent);
-    --series-income: #37b37e;
-    --series-expense: #4c86f0;
-  }
-}
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -168,9 +79,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: roun
   background: var(--brand);
   border-color: var(--brand);
   color: var(--on-brand);
-  box-shadow: 0 1px 2px rgba(8, 28, 34, 0.18), 0 6px 14px -8px rgba(8, 28, 34, 0.45);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 14px -8px rgba(0, 0, 0, 0.45);
 }
-.btn.primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); box-shadow: 0 2px 4px rgba(8, 28, 34, 0.22), 0 10px 18px -8px rgba(8, 28, 34, 0.5); }
+.btn.primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.22), 0 10px 18px -8px rgba(0, 0, 0, 0.5); }
 .btn.danger { color: var(--neg); border-color: var(--neg); background: transparent; }
 .btn.link { border: 0; background: none; color: var(--ink-soft); text-decoration: underline; font-weight: 400; }
 .btn.small { min-height: 40px; padding: 0.35rem 0.8rem; font-size: 0.9rem; }
@@ -388,7 +299,7 @@ main { padding: 0 1rem; }
 .breakdown .val { color: var(--ink-soft); }
 .breakdown .bar { height: 6px; border-radius: 99px; background: var(--tint); overflow: hidden; }
 .breakdown .bar span { display: block; height: 100%; background: var(--brand); border-radius: 99px; }
-@media (prefers-color-scheme: dark) { .breakdown .bar span { background: #4aa3b5; } }
+@media (prefers-color-scheme: dark) { .breakdown .bar span { background: var(--ink-soft); } }
 
 .empty {
   padding: 1.1rem;
@@ -772,7 +683,7 @@ main { padding: 0 1rem; }
   border-radius: 16px;
   background: var(--brand);
   color: var(--on-brand);
-  box-shadow: 0 6px 16px rgba(11, 60, 73, 0.3);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
   cursor: pointer;
 }
 .fab svg { width: 26px; height: 26px; stroke-width: 2.25; }
@@ -792,7 +703,7 @@ main { padding: 0 1rem; }
   max-height: 92dvh;
   overflow-y: auto;
 }
-.sheet::backdrop { background: rgba(8, 18, 24, 0.6); }
+.sheet::backdrop { background: rgba(0, 0, 0, 0.55); }
 .sheet[open] { animation: sheet-in 0.22s ease-out; }
 .sheet[open]::backdrop { animation: fade-in 0.22s ease-out; }
 @keyframes sheet-in { from { transform: translateY(28px); opacity: 0; } }

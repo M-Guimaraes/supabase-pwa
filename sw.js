@@ -1,7 +1,8 @@
-const CACHE = 'caixa-v26';
+const CACHE = 'caixa-v27';
 const SHELL = [
   './',
   'index.html',
+  'design-tokens.css',
   'styles.css',
   'importer.js',
   'recurring.js',
