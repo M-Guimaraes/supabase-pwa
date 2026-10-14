@@ -88,8 +88,17 @@
 
     <main>
       <section id="view-summary" class="view" data-view="summary">
+        <div id="scope-filter" class="segmented three scope-filter" role="radiogroup" aria-label="O que mostrar no Resumo" hidden>
+          <input type="radio" name="scope" id="scope-all" value="all" checked>
+          <label for="scope-all">Tudo</label>
+          <input type="radio" name="scope" id="scope-casal" value="casal">
+          <label for="scope-casal">Do casal</label>
+          <input type="radio" name="scope" id="scope-mine" value="mine">
+          <label for="scope-mine">Só meus</label>
+        </div>
+
         <div class="balance">
-          <span class="balance-caption">Saldo do mês</span>
+          <span id="balance-caption" class="balance-caption">Saldo do mês</span>
           <strong id="balance-value" class="balance-value">R$ –</strong>
           <div class="split" aria-hidden="true">
             <span id="split-income" class="split-income"></span>
@@ -97,11 +106,11 @@
           </div>
           <dl class="totals">
             <div>
-              <dt>Receitas</dt>
+              <dt id="total-income-label">Receitas</dt>
               <dd id="total-income" class="pos">R$ 0,00</dd>
             </div>
             <div>
-              <dt>Despesas</dt>
+              <dt id="total-expense-label">Despesas</dt>
               <dd id="total-expense" class="neg">R$ 0,00</dd>
             </div>
           </dl>
@@ -141,8 +150,11 @@
 
         <section id="household-panel" class="panel" hidden>
           <h3 class="panel-title">Casal</h3>
-          <p id="household-balance" class="household-balance"></p>
-          <p id="household-note" class="hint-line" hidden></p>
+          <div id="household-charge" class="charge zero">
+            <p id="household-balance" class="charge-text"></p>
+            <button id="household-settle" class="btn primary" type="button" hidden>Acertar contas</button>
+            <p id="household-note" class="hint-line" hidden></p>
+          </div>
           <dl class="household-totals">
             <div><dt>Gastos da casa no mês</dt><dd id="hh-total">R$ 0,00</dd></div>
             <div><dt id="hh-me-label">Você pagou</dt><dd id="hh-paid-me">R$ 0,00</dd></div>
@@ -150,7 +162,6 @@
           </dl>
           <ul id="household-list" class="cat-list"></ul>
           <p id="household-empty" class="empty" hidden>Nenhuma despesa compartilhada neste mês. Ao lançar uma despesa, marque "Compartilhar".</p>
-          <button id="household-settle" class="btn" type="button" hidden>Acertar contas</button>
         </section>
 
         <section id="budget-progress" class="panel" hidden>

@@ -286,14 +286,31 @@ main { padding: 0 1rem; }
 .subsection { margin: 1.1rem 0 0.5rem; font-size: 0.875rem; font-weight: 700; color: var(--ink-soft); }
 
 /* Casal: saldo, totais do mês e controles de divisão (só tokens de design-tokens.css) */
-.household-balance { margin-bottom: 0.6rem; font-family: var(--serif); font-size: 1.2rem; font-weight: 700; }
-.household-balance.pos { color: var(--pos); }
-.household-balance.neg { color: var(--neg); }
+.scope-filter { margin-bottom: 1rem; max-width: 22rem; }
+.charge {
+  margin-bottom: 0.9rem;
+  padding: 0.85rem 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+}
+.charge.pos { border-left-color: var(--pos); }
+.charge.neg { border-left-color: var(--neg); }
+.charge-text { font-family: var(--serif); font-size: 1.3rem; font-weight: 700; line-height: 1.25; }
+.charge.pos .charge-text { color: var(--pos); }
+.charge.neg .charge-text { color: var(--neg); }
+.charge .btn { width: 100%; margin-top: 0.75rem; }
+.charge .hint-line { margin-bottom: 0; }
 .household-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin: 0 0 0.75rem; }
 .household-totals dt { color: var(--ink-soft); font-size: 0.8125rem; }
 .household-totals dd { font-weight: 700; font-variant-numeric: tabular-nums; }
-.panel > .btn { width: 100%; margin-top: 0.75rem; }
-.cat-list .hh-delta { flex: none; padding-right: 0.9rem; font-family: var(--serif); font-weight: 700; font-variant-numeric: tabular-nums; }
+.cat-list .hh-delta { flex: none; display: grid; justify-items: end; padding-right: 0.9rem; text-align: right; }
+.hh-delta small { font-size: 0.75rem; color: var(--ink-soft); }
+.hh-delta strong { font-family: var(--serif); font-variant-numeric: tabular-nums; }
+.balance.casal .totals dd { color: var(--on-brand); }
+.balance.casal .split-income { background: var(--on-brand); }
+.balance.casal .split-expense { background: var(--on-brand-soft); }
 .hh-delta.pos { color: var(--pos); }
 .hh-delta.neg { color: var(--neg); }
 .share-box { margin-top: 0.4rem; padding: 0.2rem 0.9rem 0.8rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }

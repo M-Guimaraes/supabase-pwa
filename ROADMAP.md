@@ -65,6 +65,7 @@ Feito: exportação em CSV (`;`, vírgula decimal, UTF-8 com BOM, despesas negat
   - O Resumo pessoal continua mostrando o valor cheio que cada um pagou (fluxo de caixa). O parceiro só lê (nunca edita) o que é do outro e só vê as categorias usadas em lançamentos compartilhados.
   - Quem sai do casal (ou apaga a conta) encerra o compartilhamento dos dois: os lançamentos voltam a ser privados e o histórico de acertos é apagado. Nada é excluído.
   - Todas as leituras pessoais passaram a filtrar por `user_id`, porque o RLS agora também devolve linhas compartilhadas do parceiro.
+  - Cobrança (14/10/2026): o saldo vira frase de quem cobra e quem deve ("Cintia deve R$ 650,00 a você" / "Você deve R$ 650,00 a Cintia", em destaque, com o botão de acertar) e cada despesa do casal diz quem deve quanto. O Resumo ganhou o filtro Tudo | Do casal | Só meus; em "Do casal" aparecem as despesas compartilhadas dos dois, com as categorias de cada um.
   - Fica de fora da v1: contas a pagar e importação compartilhadas, orçamento do casal, mais de 2 pessoas. Lógica em `household.js`, testes em `tests/household.test.js`.
 
 Pronto quando: um item por vez, cada um testado no celular.

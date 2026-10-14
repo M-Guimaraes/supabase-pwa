@@ -24,6 +24,7 @@
     month: firstOfMonth(new Date()),
     categories: [],
     partnerCategories: new Map(),
+    scope: 'all', // filtro do Resumo: all | casal | mine
     household: null, // { id, myName, partner: { user_id, name } | null }
     householdInvite: null,
     shared: [],
@@ -1129,13 +1130,43 @@
     renderSecurity();
   }
 
+  // O filtro só existe com casal completo; sem parceiro o Resumo é sempre o pessoal.
+  function summaryScope() {
+    return state.household && state.household.partner ? state.scope : 'all';
+  }
+
+  function sharedOfMonth() {
+    const [start, next] = monthRange();
+    return state.shared.filter((t) => t.occurred_on >= start && t.occurred_on < next);
+  }
+
+  // Nome da categoria de uma despesa compartilhada: minha ou do parceiro (cada um tem as suas).
+  function sharedCategoryName(t) {
+    if (t.user_id === state.userId) return categoryName(t.category_id);
+    return state.partnerCategories.get(t.category_id) || 'Sem categoria';
+  }
+
   function renderSummary() {
+    const scope = summaryScope();
+    const casal = scope === 'casal';
+    const partner = state.household && state.household.partner;
+    const rows = Household.filterScope(scope, state.transactions, sharedOfMonth());
+
+    $('scope-filter').hidden = !partner;
+    const radio = document.querySelector(`input[name="scope"][value="${scope}"]`);
+    if (radio) radio.checked = true;
+
     let income = 0;
     let expense = 0;
-    const perCategory = new Map();
+    const perCategory = new Map(); // por id da categoria; no casal, por nome (cada um tem as suas)
 
-    for (const t of state.transactions) {
-      if (t.type === 'income') {
+    for (const t of rows) {
+      if (casal) {
+        // no casal: "income" = o que eu paguei, "expense" = o que o parceiro pagou
+        if (t.user_id === state.userId) income += t.amount; else expense += t.amount;
+        const name = sharedCategoryName(t);
+        perCategory.set(name, (perCategory.get(name) || 0) + t.amount);
+      } else if (t.type === 'income') {
         income += t.amount;
       } else {
         expense += t.amount;
@@ -1143,39 +1174,46 @@
       }
     }
 
-    const balance = income - expense;
+    const balance = casal ? income + expense : income - expense;
     const value = $('balance-value');
     value.textContent = brl.format(balance);
-    value.classList.toggle('neg', balance < 0);
+    value.classList.toggle('neg', !casal && balance < 0);
+    $('balance-caption').textContent = casal ? 'Gastos do casal no mês' : scope === 'mine' ? 'Saldo do mês (só meus)' : 'Saldo do mês';
+    $('total-income-label').textContent = casal ? 'Você pagou' : 'Receitas';
+    $('total-expense-label').textContent = casal ? `${partner.name} pagou` : 'Despesas';
     $('total-income').textContent = brl.format(income);
     $('total-expense').textContent = brl.format(expense);
+    document.querySelector('.balance').classList.toggle('casal', casal);
 
     const total = income + expense;
     $('split-income').style.width = total ? `${(income / total) * 100}%` : '0%';
     $('split-expense').style.width = total ? `${(expense / total) * 100}%` : '0%';
 
     const fixed = Recurring.fixedExpenseTotal(state.recurring);
-    $('fixed-total').hidden = fixed.count === 0;
+    $('fixed-total').hidden = casal || fixed.count === 0;
     if (fixed.count > 0) {
       $('fixed-total').textContent =
         `Despesas fixas: ${brl.format(fixed.total)} por mês, em ${fixed.count} ` +
         (fixed.count === 1 ? 'lançamento.' : 'lançamentos.');
     }
 
-    renderBudgetProgress(perCategory);
+    // Os limites do orçamento são pessoais: não fazem sentido na visão do casal.
+    if (casal) $('budget-progress').hidden = true;
+    else renderBudgetProgress(perCategory);
 
     const list = $('breakdown');
     list.replaceChildren();
-    const rows = [...perCategory.entries()].sort((a, b) => b[1] - a[1]);
-    $('breakdown-empty').hidden = rows.length > 0;
+    const sorted = [...perCategory.entries()].sort((a, b) => b[1] - a[1]);
+    $('breakdown-empty').hidden = sorted.length > 0;
+    const spent = casal ? total : expense;
 
-    for (const [id, sum] of rows) {
+    for (const [key, sum] of sorted) {
       const li = el('li');
       const row = el('div', 'row');
-      row.append(el('span', 'name', categoryName(id)), el('span', 'val', brl.format(sum)));
+      row.append(el('span', 'name', casal ? key : categoryName(key)), el('span', 'val', brl.format(sum)));
       const bar = el('div', 'bar');
       const fill = el('span');
-      fill.style.width = `${(sum / expense) * 100}%`;
+      fill.style.width = `${(sum / spent) * 100}%`;
       bar.append(fill);
       li.append(row, bar);
       list.append(li);
@@ -1625,7 +1663,7 @@
       else if (!(amount > 0)) hint.textContent = `Você fica com ${fmtPct(mine)}% e ${partnerName()} com ${fmtPct(100 - mine)}%.`;
       else {
         const owed = Household.owedByPartner({ amount, payer_share: mine });
-        hint.textContent = owed > 0 ? `${partnerName()} te deve ${brl.format(owed)}.` : 'Sem dívida: a despesa é toda sua.';
+        hint.textContent = owed > 0 ? `${partnerName()} deve ${brl.format(owed)} a você.` : 'Sem dívida: a despesa é toda sua.';
       }
     }
 
@@ -1660,6 +1698,14 @@
   const txShare = shareUI('tx', () => document.querySelector('input[name="type"]:checked').value, 'tx-amount');
   const recShare = shareUI('rec', () => document.querySelector('input[name="rtype"]:checked').value, 'rec-amount');
 
+  document.querySelectorAll('input[name="scope"]').forEach((r) =>
+    r.addEventListener('change', () => {
+      state.scope = document.querySelector('input[name="scope"]:checked').value;
+      renderSummary();
+      renderHousehold();
+    })
+  );
+
   function closeOnOutside(dialog) {
     dialog.addEventListener('click', (e) => {
       const r = dialog.getBoundingClientRect();
@@ -1684,19 +1730,16 @@
     renderHouseholdSettings();
     const panel = $('household-panel');
     const hh = state.household;
-    if (!hh || !hh.partner) { panel.hidden = true; return; }
+    if (!hh || !hh.partner || summaryScope() === 'mine') { panel.hidden = true; return; }
     panel.hidden = false;
     const partner = hh.partner;
     const me = state.userId;
-    const [start, next] = monthRange();
-    const month = state.shared.filter((t) => t.occurred_on >= start && t.occurred_on < next);
+    const month = sharedOfMonth();
 
     const bal = householdBalance();
-    const line = $('household-balance');
-    line.className = `household-balance${bal > 0 ? ' pos' : bal < 0 ? ' neg' : ''}`;
-    line.textContent = bal > 0
-      ? `${partner.name} te deve ${brl.format(bal)}.`
-      : bal < 0 ? `Você deve ${brl.format(-bal)} a ${partner.name}.` : 'Tudo acertado entre vocês.';
+    const d = Household.describeBalance(bal, partner.name, (n) => brl.format(n));
+    $('household-charge').className = `charge ${d.tone}`;
+    $('household-balance').textContent = d.text;
     $('household-settle').hidden = !(bal < 0);
     $('household-note').hidden = !(bal > 0);
     $('household-note').textContent = 'Quem paga registra o acerto no próprio app.';
@@ -1713,15 +1756,20 @@
     $('household-empty').hidden = month.length > 0;
     for (const t of month) {
       const mine = t.user_id === me;
-      const owed = Household.owedByPartner(t);
-      const category = mine ? categoryName(t.category_id) : state.partnerCategories.get(t.category_id) || 'Sem categoria';
+      const charge = Household.chargeOf(t, me);
       const li = el('li');
       const text = el('span', 'bill-text');
       text.append(
-        el('span', 'title', t.description || category),
+        el('span', 'title', t.description || sharedCategoryName(t)),
         el('span', 'sub', `${mine ? 'Você' : partner.name} pagou ${brl.format(t.amount)} · ${Household.splitLabel(mine ? t.payer_share : 100 - t.payer_share)} · ${fmtDate(t.occurred_on)}`)
       );
-      li.append(text, el('span', `hh-delta ${mine ? 'pos' : 'neg'}`, `${mine ? '+' : '−'} ${brl.format(owed)}`));
+      // cobrança: quem deve e quanto, em vez de um "+ R$" solto
+      const delta = el('span', `hh-delta ${charge > 0 ? 'pos' : charge < 0 ? 'neg' : ''}`);
+      delta.append(
+        el('small', '', charge > 0 ? `${partner.name} deve` : charge < 0 ? 'Você deve' : 'Sem dívida'),
+        el('strong', '', brl.format(Math.abs(charge)))
+      );
+      li.append(text, delta);
       ul.append(li);
     }
   }
@@ -2062,7 +2110,8 @@
     sheet.close();
     state.month = firstOfMonth(parseYmd(date));
     focusListOn(date);
-    toast('Lançamento salvo');
+    const owed = payload.household_id && payload.type === 'expense' ? Household.owedByPartner(payload) : 0;
+    toast(owed > 0 ? `Salvo. ${partnerName()} deve ${brl.format(owed)} a você.` : 'Lançamento salvo');
     await refresh();
   });
 

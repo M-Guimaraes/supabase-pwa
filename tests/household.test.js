@@ -101,3 +101,38 @@ test('códigos de convite: normaliza e valida o alfabeto', () => {
   assert.equal(H.isValidCode('ABCD2340'), false); // 0 não existe no alfabeto
   assert.equal(H.isValidCode('ABCD234I'), false); // I também não
 });
+
+test('describeBalance: quem cobra e quem deve', () => {
+  assert.deepEqual(H.describeBalance(650, 'Cintia'), { tone: 'pos', amount: 650, text: 'Cintia deve R$ 650,00 a você.' });
+  assert.deepEqual(H.describeBalance(-25.5, 'Beto'), { tone: 'neg', amount: 25.5, text: 'Você deve R$ 25,50 a Beto.' });
+  assert.deepEqual(H.describeBalance(0, 'Beto'), { tone: 'zero', amount: 0, text: 'Tudo acertado entre vocês.' });
+});
+
+test('describeBalance: usa o formatador recebido', () => {
+  assert.equal(H.describeBalance(10, 'Ana', (n) => `<${n}>`).text, 'Ana deve <10> a você.');
+});
+
+test('chargeOf: positivo quando eu paguei, negativo quando o parceiro pagou', () => {
+  const tx = { user_id: ME, amount: 1300, payer_share: 50 };
+  assert.equal(H.chargeOf(tx, ME), 650);
+  assert.equal(H.chargeOf({ ...tx, user_id: PARTNER }, ME), -650);
+  assert.equal(H.chargeOf({ user_id: ME, amount: 100, payer_share: 60 }, ME), 40);
+});
+
+test('filterScope: tudo, só meus e do casal', () => {
+  const priv = { id: 'p', user_id: ME, type: 'expense', amount: 30, household_id: null, payer_share: null };
+  const income = { id: 'i', user_id: ME, type: 'income', amount: 3000, household_id: null, payer_share: null };
+  const mineShared = { id: 'a', user_id: ME, type: 'expense', amount: 100, household_id: 'h', payer_share: 50 };
+  const theirs = { id: 'b', user_id: PARTNER, type: 'expense', amount: 150, household_id: 'h', payer_share: 50 };
+  const own = [priv, income, mineShared];
+  const shared = [mineShared, theirs];
+  const ids = (rows) => rows.map((r) => r.id).sort();
+  assert.deepEqual(ids(H.filterScope('all', own, shared)), ['a', 'i', 'p']);
+  assert.deepEqual(ids(H.filterScope('mine', own, shared)), ['i', 'p']);
+  assert.deepEqual(ids(H.filterScope('casal', own, shared)), ['a', 'b']);
+});
+
+test('filterScope casal: ignora receita compartilhada', () => {
+  const inc = { id: 'x', user_id: ME, type: 'income', amount: 10, household_id: 'h', payer_share: 50 };
+  assert.deepEqual(H.filterScope('casal', [], [inc]), []);
+});

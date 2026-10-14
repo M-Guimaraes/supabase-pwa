@@ -87,6 +87,31 @@
     return out;
   }
 
+  const defaultMoney = (n) => 'R$ ' + n.toFixed(2).replace('.', ',');
+
+  // Frase de cobrança para o saldo: quem cobra e quem deve. fmt formata o valor (ex.: Intl).
+  function describeBalance(bal, partnerName, fmt) {
+    const money = fmt || defaultMoney;
+    if (bal > 0) return { tone: 'pos', amount: bal, text: `${partnerName} deve ${money(bal)} a você.` };
+    if (bal < 0) return { tone: 'neg', amount: -bal, text: `Você deve ${money(-bal)} a ${partnerName}.` };
+    return { tone: 'zero', amount: 0, text: 'Tudo acertado entre vocês.' };
+  }
+
+  // Valor assinado de uma despesa para quem olha: positivo = o parceiro me deve; negativo = eu devo.
+  function chargeOf(tx, myId) {
+    const owed = Math.round(owedByPartner(tx) * 100) / 100;
+    return tx.user_id === myId ? owed : -owed;
+  }
+
+  // Linhas do Resumo conforme o filtro. ownTx = meus lançamentos do mês; sharedTx = compartilhados
+  // do mês, dos dois. "all" = meus lançamentos (valor cheio); "mine" = só os meus não compartilhados;
+  // "casal" = despesas compartilhadas dos dois (receita não se divide).
+  function filterScope(scope, ownTx, sharedTx) {
+    if (scope === 'casal') return sharedExpenses(sharedTx);
+    if (scope === 'mine') return ownTx.filter((t) => !(t.household_id != null && t.payer_share != null));
+    return ownTx;
+  }
+
   // "50/50", "60/40"; 0 vira "Tudo do parceiro".
   function splitLabel(payerShare) {
     const n = Number(payerShare);
@@ -104,5 +129,5 @@
     return /^[A-HJ-NP-Z2-9]{8}$/.test(normalizeCode(text));
   }
 
-  return { SPLIT_PRESETS, parseShare, isShared, owedByPartner, payerPart, balance, monthSummary, splitLabel, normalizeCode, isValidCode };
+  return { SPLIT_PRESETS, parseShare, isShared, owedByPartner, payerPart, balance, monthSummary, describeBalance, chargeOf, filterScope, splitLabel, normalizeCode, isValidCode };
 });
