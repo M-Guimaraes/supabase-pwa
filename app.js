@@ -102,12 +102,42 @@
   }
 
   let toastTimer;
+  let toastHideTimer;
   function toast(message) {
     const t = $('toast');
-    t.textContent = message;
-    t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+    clearTimeout(toastHideTimer);
+    t.hidden = false;
+    t.classList.remove('leaving');
+    // reflow so the enter transition replays even if a toast was already showing
+    void t.offsetWidth;
+    t.textContent = message;
+    t.classList.add('showing');
+    toastTimer = setTimeout(() => {
+      t.classList.remove('showing');
+      t.classList.add('leaving');
+      toastHideTimer = setTimeout(() => { t.hidden = true; t.classList.remove('leaving'); }, 180);
+    }, 3000);
+  }
+
+  const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Closes a <dialog>.sheet with a matching exit animation instead of vanishing instantly,
+  // so dismissal mirrors the entry path (see apple-design: spatial consistency).
+  function closeSheet(dialog) {
+    if (!dialog || !dialog.open) return;
+    if (dialog.classList.contains('closing')) return;
+    if (reduceMotion()) { dialog.close(); return; }
+    dialog.classList.add('closing');
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      dialog.classList.remove('closing');
+      dialog.close();
+    };
+    dialog.addEventListener('animationend', finish, { once: true });
+    setTimeout(finish, 260);
   }
 
   function friendlyError(error) {
@@ -1722,7 +1752,7 @@
   function closeOnOutside(dialog) {
     dialog.addEventListener('click', (e) => {
       const r = dialog.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeSheet(dialog);
     });
   }
 
@@ -1833,7 +1863,7 @@
 
   $('household-create').addEventListener('click', () => openHouseholdSheet('create'));
   $('household-join').addEventListener('click', () => openHouseholdSheet('join'));
-  $('household-cancel').addEventListener('click', () => householdSheet.close());
+  $('household-cancel').addEventListener('click', () => closeSheet(householdSheet));
 
   $('household-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1853,7 +1883,7 @@
     save.disabled = false;
     if (error) return fail(friendlyError(error));
 
-    householdSheet.close();
+    closeSheet(householdSheet);
     toast(householdMode === 'create' ? 'Casal criado. Passe o código ao seu parceiro.' : 'Você entrou no casal');
     await refresh();
     $('household-group').open = true;
@@ -1902,7 +1932,7 @@
     $('settle-amount').focus();
   });
 
-  $('settle-cancel').addEventListener('click', () => settleSheet.close());
+  $('settle-cancel').addEventListener('click', () => closeSheet(settleSheet));
 
   $('settle-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1917,7 +1947,7 @@
     const { error } = await sb.from('household_settlements').insert({ household_id: hh.id, to_user: hh.partner.user_id, amount });
     save.disabled = false;
     if (error) { errorBox.textContent = friendlyError(error); errorBox.hidden = false; return; }
-    settleSheet.close();
+    closeSheet(settleSheet);
     toast('Acerto registrado');
     await refresh();
   });
@@ -2058,11 +2088,11 @@
   }
 
   $('fab').addEventListener('click', () => openSheet(null));
-  $('tx-cancel').addEventListener('click', () => sheet.close());
+  $('tx-cancel').addEventListener('click', () => closeSheet(sheet));
   sheet.addEventListener('click', (e) => {
     const r = sheet.getBoundingClientRect();
     const outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
-    if (outside) sheet.close();
+    if (outside) closeSheet(sheet);
   });
 
   $('tx-form').addEventListener('submit', async (e) => {
@@ -2106,7 +2136,7 @@
         errorBox.hidden = false;
         return false;
       }
-      sheet.close();
+      closeSheet(sheet);
       state.month = firstOfMonth(parseYmd(date));
       focusListOn(date);
       state.viewingCache = state.viewingCache || !navigator.onLine;
@@ -2145,7 +2175,7 @@
       return;
     }
 
-    sheet.close();
+    closeSheet(sheet);
     state.month = firstOfMonth(parseYmd(date));
     focusListOn(date);
     const owed = payload.household_id && payload.type === 'expense' ? Household.owedByPartner(payload) : 0;
@@ -2201,7 +2231,7 @@
       $('tx-error').hidden = false;
       return;
     }
-    sheet.close();
+    closeSheet(sheet);
     toast('Lançamento excluído');
     await refresh();
   });
@@ -2305,11 +2335,11 @@
   }
 
   $('recurring-add').addEventListener('click', () => openRecurringSheet(null));
-  $('rec-cancel').addEventListener('click', () => recSheet.close());
+  $('rec-cancel').addEventListener('click', () => closeSheet(recSheet));
   recSheet.addEventListener('click', (e) => {
     const r = recSheet.getBoundingClientRect();
     const outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
-    if (outside) recSheet.close();
+    if (outside) closeSheet(recSheet);
   });
 
   $('recurring-form').addEventListener('submit', async (e) => {
@@ -2357,7 +2387,7 @@
     save.disabled = false;
     if (error) return fail(friendlyError(error));
 
-    recSheet.close();
+    closeSheet(recSheet);
     toast('Lançamento fixo salvo');
     state.lastGeneration = null;
     await refresh();
@@ -2373,7 +2403,7 @@
       $('rec-error').hidden = false;
       return;
     }
-    recSheet.close();
+    closeSheet(recSheet);
     toast('Lançamento fixo excluído');
     await refresh();
   });
@@ -2427,7 +2457,7 @@
   }
 
   $('budget-add').addEventListener('click', () => openBudgetSheet(null));
-  $('bud-cancel').addEventListener('click', () => budgetSheet.close());
+  $('bud-cancel').addEventListener('click', () => closeSheet(budgetSheet));
 
   $('budget-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2451,7 +2481,7 @@
     save.disabled = false;
     if (error) { errorBox.textContent = friendlyError(error); errorBox.hidden = false; return; }
 
-    budgetSheet.close();
+    closeSheet(budgetSheet);
     toast('Limite salvo');
     await refresh();
   });
@@ -2461,7 +2491,7 @@
     if (!b || !confirm(`Remover o limite de "${categoryName(b.category_id)}"?`)) return;
     const { error } = await sb.from('budgets').delete().eq('id', b.id);
     if (error) { $('bud-error').textContent = friendlyError(error); $('bud-error').hidden = false; return; }
-    budgetSheet.close();
+    closeSheet(budgetSheet);
     toast('Limite removido');
     await refresh();
   });
@@ -2562,7 +2592,7 @@
   }
 
   $('bill-add').addEventListener('click', () => openBillSheet(null));
-  $('bill-cancel').addEventListener('click', () => billSheet.close());
+  $('bill-cancel').addEventListener('click', () => closeSheet(billSheet));
 
   $('bill-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2588,7 +2618,7 @@
     save.disabled = false;
     if (error) return fail(friendlyError(error));
 
-    billSheet.close();
+    closeSheet(billSheet);
     toast('Conta salva');
     await refresh();
   });
@@ -2598,7 +2628,7 @@
     if (!b || !confirm(`Excluir a conta "${b.description}"?`)) return;
     const { error } = await sb.from('bills').delete().eq('id', b.id);
     if (error) { $('bill-error').textContent = friendlyError(error); $('bill-error').hidden = false; return; }
-    billSheet.close();
+    closeSheet(billSheet);
     toast('Conta excluída');
     await refresh();
   });
@@ -2614,7 +2644,7 @@
       category_id: $('bill-category').value || null,
     });
     $('bill-pay').disabled = false;
-    if (ok) billSheet.close();
+    if (ok) closeSheet(billSheet);
   });
 
   /* ---------- Segurança: alterar a senha ---------- */
@@ -2641,7 +2671,7 @@
     $('pw-current').focus();
   });
 
-  $('pw-cancel').addEventListener('click', () => pwSheet.close());
+  $('pw-cancel').addEventListener('click', () => closeSheet(pwSheet));
   $('pw-new').addEventListener('input', renderChangeRules);
   $('pw-confirm').addEventListener('input', renderChangeRules);
   $('pw-show').addEventListener('change', (e) => {
@@ -2684,7 +2714,7 @@
     }
     pwFields.forEach((id) => { $(id).value = ''; });
     $('pw-otp').value = '';
-    pwSheet.close();
+    closeSheet(pwSheet);
     toast('Senha alterada');
   });
 
@@ -2740,7 +2770,7 @@
     }
   });
 
-  $('mfa-enroll-cancel').addEventListener('click', () => mfaSheet.close());
+  $('mfa-enroll-cancel').addEventListener('click', () => closeSheet(mfaSheet));
   mfaSheet.addEventListener('close', discardPendingFactor);
 
   $('mfa-enroll-form').addEventListener('submit', async (e) => {
@@ -2763,7 +2793,7 @@
       return;
     }
     pendingFactorId = null; // confirmado: não descartar ao fechar
-    mfaSheet.close();
+    closeSheet(mfaSheet);
     toast('Verificação em duas etapas ativada');
     await renderSecurity();
   });
@@ -2920,7 +2950,7 @@
   }
 
   $('goal-add').addEventListener('click', () => openGoalSheet(null));
-  $('goal-cancel').addEventListener('click', () => goalSheet.close());
+  $('goal-cancel').addEventListener('click', () => closeSheet(goalSheet));
 
   $('goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2954,7 +2984,7 @@
     save.disabled = false;
     if (error) return fail(friendlyError(error));
 
-    goalSheet.close();
+    closeSheet(goalSheet);
     toast('Meta salva');
     await refresh();
   });
@@ -2964,7 +2994,7 @@
     if (!g || !confirm(`Excluir a meta "${g.name}"?`)) return;
     const { error } = await sb.from('goals').delete().eq('id', g.id);
     if (error) { $('goal-error').textContent = friendlyError(error); $('goal-error').hidden = false; return; }
-    goalSheet.close();
+    closeSheet(goalSheet);
     toast('Meta excluída');
     await refresh();
   });
@@ -3354,7 +3384,7 @@
     importSheet.showModal();
   });
 
-  $('import-cancel').addEventListener('click', () => importSheet.close());
+  $('import-cancel').addEventListener('click', () => closeSheet(importSheet));
 
   // Agrupa os itens de uma página em linhas (por posição vertical), uma por "linha
   // visual" da tabela, juntando os textos de cada linha da esquerda pra direita.
@@ -3548,7 +3578,7 @@
       return;
     }
 
-    importSheet.close();
+    closeSheet(importSheet);
     if (rows.length) {
       const latest = rows.map((r) => r.occurred_on).sort().pop();
       state.month = firstOfMonth(parseYmd(latest));
@@ -3669,7 +3699,7 @@
     }
   });
 
-  $('moves-cancel').addEventListener('click', () => movesSheet.close());
+  $('moves-cancel').addEventListener('click', () => closeSheet(movesSheet));
 
   $('moves-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3688,7 +3718,7 @@
           done += part.length;
         }
       }
-      movesSheet.close();
+      closeSheet(movesSheet);
       toast(`${plural(done, 'lançamento marcado', 'lançamentos marcados')}. O Resumo já não conta esses valores.`);
       await refresh();
     } catch (err) {
@@ -3787,7 +3817,7 @@
       toast(friendlyError(err));
       return;
     }
-    invoiceSheet.close();
+    closeSheet(invoiceSheet);
     toast('Fatura excluída');
     await refresh();
   }
@@ -3887,7 +3917,7 @@
     $('invoice-check').hidden = false;
   }
 
-  $('invoice-close').addEventListener('click', () => invoiceSheet.close());
+  $('invoice-close').addEventListener('click', () => closeSheet(invoiceSheet));
 
   const cardImportSheet = $('card-import-sheet');
   let cardImp = { result: null };
@@ -3901,7 +3931,7 @@
     cardImportSheet.showModal();
   });
 
-  $('card-import-cancel').addEventListener('click', () => cardImportSheet.close());
+  $('card-import-cancel').addEventListener('click', () => closeSheet(cardImportSheet));
 
   function showCardImportError(msg) {
     $('card-import-error').textContent = msg;
@@ -4036,7 +4066,7 @@
           totalInserted += data.length;
         }
       }
-      cardImportSheet.close();
+      closeSheet(cardImportSheet);
       toast(totalInserted ? `${totalInserted} compras importadas` : 'Fatura já estava importada');
       await refresh();
     } catch (err) {
@@ -4058,7 +4088,7 @@
     $('delete-confirm').focus();
   });
 
-  $('delete-cancel').addEventListener('click', () => deleteSheet.close());
+  $('delete-cancel').addEventListener('click', () => closeSheet(deleteSheet));
 
   $('delete-confirm').addEventListener('input', (e) => {
     $('delete-submit').disabled = e.target.value.trim().toLowerCase() !== 'excluir';
@@ -4078,7 +4108,7 @@
       return;
     }
 
-    deleteSheet.close();
+    closeSheet(deleteSheet);
     store.clearAll();
     // A conta já não existe: encerra só a sessão local, sem chamar o servidor.
     await sb.auth.signOut({ scope: 'local' });
