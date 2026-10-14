@@ -29,7 +29,7 @@
 
   // Despesas saem negativas e receitas positivas.
   function transactionsToCSV(transactions, categoryName) {
-    const lines = ['Data;Tipo;Descrição;Categoria;Valor'];
+    const lines = ['Data;Tipo;Descrição;Categoria;Valor;Movimento'];
     for (const t of transactions) {
       const d = t.occurred_on;
       const signed = t.type === 'expense' ? -Number(t.amount) : Number(t.amount);
@@ -39,6 +39,7 @@
         cell(t.description),
         cell(categoryName(t.category_id)),
         money(signed),
+        t.kind === 'card_payment' ? 'Pagamento de fatura' : t.kind === 'transfer' ? 'Transferência' : 'Normal',
       ].join(';'));
     }
     return '﻿' + lines.join('\r\n') + '\r\n';

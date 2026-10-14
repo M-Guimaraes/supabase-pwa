@@ -660,3 +660,9 @@ grant execute on function public.create_household(text) to authenticated;
 grant execute on function public.new_household_invite() to authenticated;
 grant execute on function public.join_household(text, text) to authenticated;
 grant execute on function public.leave_household() to authenticated;
+
+-- Movimentações que não são gasto nem receita: pagamento da fatura do cartão (as compras da
+-- fatura já são o gasto) e investimentos ou transferências entre contas. Vazio = lançamento
+-- normal. Lançamentos com kind ficam fora dos totais do Resumo, da lista e dos gráficos.
+alter table public.transactions
+  add column kind text check (kind in ('card_payment', 'transfer'));

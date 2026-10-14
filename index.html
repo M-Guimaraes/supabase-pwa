@@ -117,6 +117,8 @@
           <p id="fixed-total" class="fixed-total" hidden></p>
         </div>
 
+        <p id="moves-note" class="moves-note" hidden></p>
+
         <section id="onboarding" class="panel" hidden>
           <h3 class="panel-title">Primeiros passos</h3>
           <ol class="steps">
@@ -377,6 +379,8 @@
           <div class="group-body">
             <p class="account-note">Traga lançamentos de um extrato do seu banco, em OFX ou CSV.</p>
             <button id="import-open" class="btn" type="button">Importar extrato</button>
+            <p class="account-note spaced">Pagamento de fatura, aplicações e resgates não são gasto nem receita. Veja quais dos seus lançamentos são assim e tire-os do Resumo.</p>
+            <button id="moves-open" class="btn" type="button">Revisar movimentações</button>
             <p class="account-note spaced">Importou o mesmo extrato em CSV e em OFX? Remova os lançamentos repetidos, mantendo um de cada.</p>
             <button id="dedupe-run" class="btn" type="button">Remover duplicados da importação</button>
             <p class="account-note spaced">Baixe seus lançamentos em CSV, para abrir no Excel ou no Planilhas.</p>
@@ -470,6 +474,14 @@
 
       <label for="tx-date">Data</label>
       <input id="tx-date" type="date" required>
+
+      <label for="tx-kind">Tipo de movimento</label>
+      <select id="tx-kind">
+        <option value="">Gasto ou receita normal</option>
+        <option value="card_payment">Pagamento de fatura do cartão</option>
+        <option value="transfer">Transferência ou investimento</option>
+      </select>
+      <p id="tx-kind-hint" class="hint-line" hidden></p>
 
       <div id="tx-share-box" class="share-box" hidden>
         <label class="check"><input type="checkbox" id="tx-share"> <span id="tx-share-label">Compartilhar com o casal</span></label>
@@ -577,6 +589,23 @@
       <div class="sheet-actions">
         <button id="settle-cancel" class="btn" type="button">Cancelar</button>
         <button id="settle-save" class="btn primary" type="submit">Registrar acerto</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="moves-sheet" class="sheet" aria-labelledby="moves-title">
+    <form id="moves-form" method="dialog" novalidate>
+      <h3 id="moves-title">Revisar movimentações</h3>
+      <p id="moves-intro" class="account-note"></p>
+      <ul id="moves-list" class="import-list"></ul>
+      <div id="moves-impact" class="moves-impact" hidden>
+        <h4 class="subsection">Como ficam os últimos meses</h4>
+        <ul id="moves-impact-list" class="cat-list"></ul>
+      </div>
+      <p id="moves-error" class="form-error" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button id="moves-cancel" class="btn" type="button">Cancelar</button>
+        <button id="moves-apply" class="btn primary" type="submit" disabled>Marcar</button>
       </div>
     </form>
   </dialog>
@@ -787,6 +816,7 @@
   <dialog id="invoice-sheet" class="sheet" aria-labelledby="invoice-title">
     <h3 id="invoice-title">Fatura</h3>
     <p id="invoice-meta" class="account-note"></p>
+    <p id="invoice-check" class="account-note" hidden></p>
     <div id="invoice-groups"></div>
     <div class="sheet-actions">
       <button id="invoice-delete" class="btn danger" type="button">Excluir fatura</button>
@@ -825,6 +855,7 @@
   <script src="period.js"></script>
   <script src="trend.js"></script>
   <script src="household.js"></script>
+  <script src="movements.js"></script>
   <script src="offline.js"></script>
   <script src="app.js"></script>
 </body>

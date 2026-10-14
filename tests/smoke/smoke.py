@@ -203,7 +203,8 @@ with sync_playwright() as p:
     page.click('[data-tab=cards]')
     check(page.locator('#cards-list details').count() == 2, 'dois cartões na lista')
     msgs = []
-    page.on('dialog', lambda d: (msgs.append(d.message), d.accept()))
+    on_dialog = lambda d: (msgs.append(d.message), d.accept())
+    page.on('dialog', on_dialog)
     page.locator('#cards-list details').nth(1).locator('summary').click()
     page.locator('#cards-list details').nth(1).locator('.cat-list button').first.click()
     page.wait_for_selector('#invoice-sheet[open]')
@@ -220,6 +221,7 @@ with sync_playwright() as p:
     check('card2' not in ids('credit_cards') and 'card1' in ids('credit_cards'), 'cartão excluído, o outro fica')
     check('inv2' not in ids('card_invoices') and 'c2a' not in ids('transactions') and 'c2b' not in ids('transactions') and 'cardtx1' in ids('transactions'), 'faturas e compras do cartão saíram; o resto fica')
     check(page.locator('#cards-list details').count() == 1 and 'SEGUNDO' not in page.inner_text('#cards-list'), 'lista mostra só o cartão que sobrou')
+    page.remove_listener('dialog', on_dialog)
     page.click('[data-tab=summary]')
     # regras de categoria
     go_settings(page)
@@ -441,5 +443,85 @@ with sync_playwright() as p:
     p3.fill('#household-code-input', 'abcd-2345'); p3.click('#household-save'); p3.wait_for_timeout(500)
     check('Com Beto' in p3.inner_text('#household-hint'), 'entrou no casal com o código: ' + p3.inner_text('#household-hint'))
     p3.screenshot(path='/tmp/caixa-casal.png', full_page=True)
+    # movimentações que não são gasto: pagamento de fatura, investimentos, transferências
+    mon4 = today.strftime('%Y-%m')
+    seed4 = {
+        'categories': [{'id': 'cat-mercado', 'user_id': 'u1', 'name': 'Mercado', 'type': 'expense'}],
+        'transactions': [
+            {'id': 'm1', 'user_id': 'u1', 'type': 'expense', 'amount': 100, 'description': 'PADARIA', 'occurred_on': mon4 + '-01', 'category_id': None, 'created_at': 'a'},
+            {'id': 'm2', 'user_id': 'u1', 'type': 'income', 'amount': 2000, 'description': 'SALARIO', 'occurred_on': mon4 + '-01', 'category_id': None, 'created_at': 'a'},
+            {'id': 'm3', 'user_id': 'u1', 'type': 'expense', 'amount': 1500, 'description': 'PAGAMENTO CARTAO CREDITO BCE', 'occurred_on': mon4 + '-02', 'category_id': None, 'created_at': 'a', 'kind': 'card_payment'},
+            {'id': 'm4', 'user_id': 'u1', 'type': 'income', 'amount': 700, 'description': 'RESGATE CDB/RDB', 'occurred_on': mon4 + '-02', 'category_id': None, 'created_at': 'a', 'kind': 'transfer'},
+            {'id': 'm5', 'user_id': 'u1', 'type': 'expense', 'amount': 900, 'description': 'APLICACAO CDB/RDB', 'occurred_on': mon4 + '-03', 'category_id': None, 'created_at': 'a', 'kind': 'transfer'},
+            # ainda sem marcar: a revisão deve sugerir
+            {'id': 'm6', 'user_id': 'u1', 'type': 'expense', 'amount': 4000, 'description': 'APLICACAO CDB/RDB', 'occurred_on': mon4 + '-04', 'category_id': None, 'created_at': 'a'},
+            {'id': 'm7', 'user_id': 'u1', 'type': 'income', 'amount': 3000, 'description': 'RESGATE CDB/RDB', 'occurred_on': mon4 + '-05', 'category_id': None, 'created_at': 'a'},
+            {'id': 'm8', 'user_id': 'u1', 'type': 'expense', 'amount': 300, 'description': 'PIX ENVIADO Cintia de Souza 1', 'occurred_on': mon4 + '-06', 'category_id': None, 'created_at': 'a'},
+            {'id': 'm9', 'user_id': 'u1', 'type': 'expense', 'amount': 200, 'description': 'PIX ENVIADO Cintia de Souza 2', 'occurred_on': mon4 + '-07', 'category_id': None, 'created_at': 'a'}],
+    }
+    ctx4 = b.new_context(viewport={'width': 390, 'height': 800}, service_workers='block')
+    p4 = ctx4.new_page()
+    p4.on('pageerror', lambda e: problems.append('pageerror: ' + str(e)))
+    p4.on('console', lambda m: m.type == 'error' and problems.append('console: ' + m.text))
+    p4.add_init_script('window.__seed = ' + json.dumps(seed4))
+    p4.route('https://cdn.jsdelivr.net/**', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
+    p4.goto('http://127.0.0.1:8124/index.html'); p4.wait_for_selector('#app:not([hidden])'); p4.wait_for_timeout(500)
+    nb4 = lambda sel: p4.inner_text(sel).replace('\xa0', ' ')
+    # antes da revisão: só m3, m4, m5 estão marcados; m6..m9 ainda contam
+    check(nb4('#total-expense') == 'R$ 4.600,00' and nb4('#total-income') == 'R$ 5.000,00', 'Resumo ignora o que está marcado e conta o resto: ' + nb4('#total-expense') + ' / ' + nb4('#total-income'))
+    check('Fora do resumo' in nb4('#moves-note') and 'fatura paga R$ 1.500,00' in nb4('#moves-note') and 'aplicado R$ 900,00' in nb4('#moves-note') and 'resgatado R$ 700,00' in nb4('#moves-note'), 'linha Fora do resumo: ' + nb4('#moves-note'))
+    p4.click('[data-tab=list]'); p4.wait_for_timeout(200)
+    p4.evaluate("document.getElementById('period-month').click()") if False else None
+    # revisar movimentações
+    go_settings(p4); p4.click('#moves-open'); p4.wait_for_selector('#moves-sheet[open]'); p4.wait_for_timeout(400)
+    check(p4.locator('#moves-list li').count() == 2, 'revisão sugere 2 grupos (aplicação e resgate): %d' % p4.locator('#moves-list li').count())
+    check('Transferência' in nb4('#moves-list') and 'R$ 4.000,00' in nb4('#moves-list'), 'grupos mostram tipo e total')
+    check(p4.is_visible('#moves-impact') and 'R$ 4.600,00' in nb4('#moves-impact-list') and 'R$ 600,00' in nb4('#moves-impact-list'), 'prévia mostra antes e depois: ' + nb4('#moves-impact-list'))
+    check(not p4.is_disabled('#moves-apply') and '2 lançamentos' in nb4('#moves-apply'), 'botão cita quantos serão marcados: ' + nb4('#moves-apply'))
+    p4.locator('#moves-list li').nth(0).locator('input').uncheck(); p4.wait_for_timeout(100)
+    check('1 lançamento' in nb4('#moves-apply'), 'desmarcar um grupo reduz a contagem: ' + nb4('#moves-apply'))
+    p4.locator('#moves-list li').nth(0).locator('input').check()
+    p4.click('#moves-apply'); p4.wait_for_timeout(600)
+    kinds = {t['id']: t.get('kind') for t in p4.evaluate('__db.transactions')}
+    check(kinds['m6'] == 'transfer' and kinds['m7'] == 'transfer' and kinds['m8'] is None, 'revisão grava kind só nos sugeridos: %s' % kinds)
+    p4.click('[data-tab=summary]'); p4.wait_for_timeout(200)
+    check(nb4('#total-expense') == 'R$ 600,00' and nb4('#total-income') == 'R$ 2.000,00', 'Resumo depois da revisão: ' + nb4('#total-expense') + ' / ' + nb4('#total-income'))
+    check('aplicado R$ 4.900,00' in nb4('#moves-note') and 'resgatado R$ 3.700,00' in nb4('#moves-note'), 'linha atualizada: ' + nb4('#moves-note'))
+    # lista: selo e totais do período sem as movimentações
+    p4.click('[data-tab=list]'); p4.click('label[for=period-month]'); p4.wait_for_timeout(300)
+    check('Pagamento de fatura' in nb4('#tx-groups') and p4.locator('#tx-groups .tx.neutral').count() >= 3, 'lista marca movimentações como neutras')
+    check('R$ 600,00' in nb4('#period-totals') and 'R$ 2.000,00' in nb4('#period-totals'), 'totais da lista ignoram movimentações: ' + nb4('#period-totals'))
+    # formulário: detecção ao digitar, hint e marcar os parecidos
+    fab(p4); p4.fill('#tx-amount', '50,00'); p4.fill('#tx-desc', 'PAGAMENTO CARTAO CREDITO ABC')
+    check(p4.input_value('#tx-kind') == 'card_payment' and 'fora' not in '' and 'não conta' in nb4('#tx-kind-hint'), 'descrição de fatura já sugere o tipo: ' + p4.input_value('#tx-kind'))
+    p4.select_option('#tx-kind', ''); p4.fill('#tx-desc', 'PIX ENVIADO Cintia de Souza 3')
+    check(p4.input_value('#tx-kind') == '', 'mudar o tipo à mão não é sobrescrito pela detecção')
+    p4.select_option('#tx-kind', 'transfer')
+    msgs4 = []
+    p4.once('dialog', lambda d: (msgs4.append(d.message), d.accept()))
+    p4.click('#tx-save'); p4.wait_for_timeout(700)
+    kinds = {t['id']: t.get('kind') for t in p4.evaluate('__db.transactions')}
+    check(msgs4 and '2 lançamentos parecidos' in msgs4[-1], 'oferece marcar os parecidos: %s' % msgs4[-1:])
+    check(kinds['m8'] == 'transfer' and kinds['m9'] == 'transfer', 'parecidos marcados como transferência: %s' % kinds)
+    # importação: pagamento sem fatura correspondente e investimento entram como movimentação
+    ofx4 = ('<OFX><BANKTRANLIST>'
+            '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>' + today.strftime('%Y%m') + '10<TRNAMT>-300.00<FITID>K1<MEMO>PAGAMENTO CARTAO CREDITO BCE</STMTTRN>'
+            '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>' + today.strftime('%Y%m') + '11<TRNAMT>-45.00<FITID>K2<MEMO>MERCADINHO BOM</STMTTRN>'
+            '</BANKTRANLIST></OFX>')
+    go_settings(p4); p4.click('#import-open'); p4.wait_for_selector('#import-sheet[open]')
+    p4.set_input_files('#import-file', files=[{'name': 'k.ofx', 'mimeType': 'application/x-ofx', 'buffer': ofx4.encode()}])
+    p4.wait_for_selector('#import-list li'); p4.wait_for_timeout(300)
+    check('fica fora do resumo' in nb4('#import-list li:first-child') or 'fica fora do resumo' in nb4('#import-list'), 'prévia avisa que o pagamento fica fora do resumo')
+    check('despesas R$ 45,00' in nb4('#import-totals'), 'totais da prévia ignoram o pagamento: ' + nb4('#import-totals'))
+    p4.click('#import-submit'); p4.wait_for_timeout(700)
+    imp = {t.get('external_id'): t for t in p4.evaluate('__db.transactions') if t.get('external_id')}
+    pay = [t for t in imp.values() if 'PAGAMENTO CARTAO' in (t.get('description') or '')]
+    buy = [t for t in imp.values() if 'MERCADINHO' in (t.get('description') or '')]
+    check(len(pay) == 1 and pay[0].get('kind') == 'card_payment' and len(buy) == 1 and buy[0].get('kind') is None, 'importação grava kind só no pagamento: %s / %s' % (pay, buy))
+    # exportação CSV leva a coluna Movimento
+    with p4.expect_download() as dl:
+        p4.click('#export-all')
+    csv4 = open(dl.value.path(), encoding='utf-8').read()
+    check('Movimento' in csv4.splitlines()[0] and 'Pagamento de fatura' in csv4, 'CSV exportado tem a coluna Movimento')
     b.close()
 print('\nPROBLEMAS:' if problems else '\nTudo certo'); [print(' -', x) for x in problems]

@@ -70,6 +70,16 @@ Feito: exportação em CSV (`;`, vírgula decimal, UTF-8 com BOM, despesas negat
 
 Pronto quando: um item por vez, cada um testado no celular.
 
+## Movimentações fora do resumo (14/10/2026)
+
+Status: implementado, falta testar no celular.
+
+Problema: quem paga tudo no cartão via o Resumo com 2 a 3 vezes o gasto real e saldo negativo todo mês. O pagamento da fatura (débito no extrato) contava de novo as compras já importadas da fatura, e aplicações/resgates de CDB e Pix para corretora entravam como despesa e receita.
+
+Feito: coluna `transactions.kind` (`card_payment` ou `transfer`; vazio = normal). Lançamentos com `kind` ficam fora do Resumo, dos totais da lista, dos gráficos e do orçamento, e aparecem na linha "Fora do resumo". `movements.js` reconhece os padrões do extrato na importação e no formulário; "Revisar movimentações" (Ajustes → Importar e exportar) corrige os lançamentos antigos com prévia do impacto por mês; ao marcar um lançamento, o app oferece marcar os parecidos. A exportação CSV ganhou a coluna "Movimento". Na aba Cartão, o total da fatura deixou de parecer repetido por cartão e a folha da fatura confere as compras importadas com o total.
+
+Falta: a fatura de 07/10 fecha em R$ 14.832,59 e as compras importadas somam R$ 17.219,45. A diferença (R$ 2.386,86) deve vir de créditos/estornos que o leitor de PDF ignora; precisa olhar o PDF.
+
 ## 2. Menos digitação manual
 
 Status: implementado em 11/10/2026, falta testar no celular.

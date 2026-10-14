@@ -12,9 +12,19 @@ test('CSV: cabeçalho, data dd/mm/aaaa, sinal e vírgula decimal', () => {
   ], names);
   const lines = csv.replace('﻿', '').trim().split('\r\n');
   assert.equal(csv[0], '﻿');
-  assert.equal(lines[0], 'Data;Tipo;Descrição;Categoria;Valor');
-  assert.equal(lines[1], '05/10/2026;Despesa;Aluguel;Sem categoria;-1234,50');
-  assert.equal(lines[2], '06/10/2026;Receita;Salário;Mercado;3000,00');
+  assert.equal(lines[0], 'Data;Tipo;Descrição;Categoria;Valor;Movimento');
+  assert.equal(lines[1], '05/10/2026;Despesa;Aluguel;Sem categoria;-1234,50;Normal');
+  assert.equal(lines[2], '06/10/2026;Receita;Salário;Mercado;3000,00;Normal');
+});
+
+test('CSV: coluna Movimento marca pagamento de fatura e transferência', () => {
+  const csv = X.transactionsToCSV([
+    { occurred_on: '2026-09-08', type: 'expense', amount: 15411.88, description: 'PAGAMENTO CARTAO', category_id: null, kind: 'card_payment' },
+    { occurred_on: '2026-09-08', type: 'income', amount: 7000, description: 'RESGATE CDB', category_id: null, kind: 'transfer' },
+  ], names);
+  const lines = csv.replace('﻿', '').trim().split('\r\n');
+  assert.ok(lines[1].endsWith(';Pagamento de fatura'));
+  assert.ok(lines[2].endsWith(';Transferência'));
 });
 
 test('CSV: aspas, ponto e vírgula e quebras de linha na descrição', () => {
@@ -36,7 +46,7 @@ test('CSV: textos que começam como fórmula ganham apóstrofo', () => {
 });
 
 test('CSV sem lançamentos tem só o cabeçalho', () => {
-  assert.equal(X.transactionsToCSV([], names).trim(), 'Data;Tipo;Descrição;Categoria;Valor');
+  assert.equal(X.transactionsToCSV([], names).trim(), 'Data;Tipo;Descrição;Categoria;Valor;Movimento');
 });
 
 test('meta sem prazo: percentual e quanto falta', () => {

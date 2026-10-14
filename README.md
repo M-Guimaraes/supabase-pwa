@@ -20,6 +20,7 @@ App de controle financeiro (PWA) feito com HTML, CSS e JavaScript puros. Os arqu
 - Classificação automática: regras do tipo "se a descrição contém X, a categoria é Y" (Ajustes → Regras de categoria) e, sem regra, a categoria usada antes para descrição parecida. Vale na importação do extrato (a linha mostra se veio de regra ou do histórico), ao digitar um lançamento e no botão "Aplicar aos lançamentos sem categoria". Exige a tabela `category_rules` (fim de `supabase/schema.sql`)
 - Casal: duas pessoas dividem despesas da casa (Ajustes → Casal). Cada um mantém os lançamentos privados; só o marcado como compartilhado aparece para o outro, com a divisão escolhida por lançamento, saldo de quem deve e "Acertar contas". Exige o bloco "Casal" no fim de `supabase/schema.sql`
 - Cartão de crédito: importa a fatura em PDF e organiza por cartão (aba Cartão). Cartões e faturas podem ser excluídos ali; as compras da fatura saem junto
+- Movimentações fora do resumo: pagamento da fatura do cartão (as compras da fatura já são o gasto), aplicações/resgates e transferências entre contas não contam como gasto nem receita. O app reconhece pelo texto do extrato ao importar; os lançamentos antigos se corrigem em Ajustes → Importar e exportar → Revisar movimentações (com prévia). O Resumo mostra uma linha "Fora do resumo" com os valores. Exige a coluna `kind` (fim de `supabase/schema.sql`)
 - Modo offline: o app abre sem internet com a última cópia dos dados; lançamentos novos ficam na fila do aparelho e sobem sozinhos quando a conexão volta (editar e excluir precisam de internet; sair do app apaga a cópia local)
 - Gráfico "Últimos 6 meses" no Resumo: receitas × despesas por mês, toque no mês para ver os valores e botão para ver em tabela; a aba "Ano" mostra janeiro a dezembro com total do ano e navegação entre anos; um filtro escolhe uma categoria (ou "Sem categoria") para o gráfico e a tabela
 - Metas com valor, quanto já foi guardado, prazo e quanto guardar por mês (Ajustes → Metas)
@@ -47,6 +48,7 @@ O esquema do banco está em `supabase/schema.sql`. A chave usada em `app.js` é 
 
 - `index.html`, `styles.css`, `app.js`: o app
 - `household.js`: saldo e divisão dos gastos do casal (testes em `tests/`)
+- `movements.js`: detecta pagamento de fatura, investimentos e transferências (testes em `tests/`)
 - `importer.js`: leitor de extratos OFX e CSV (testes em `tests/`, rodar com `node --test`)
 - `tests/smoke/`: teste de fumaça no navegador com Supabase de mentira (`python3 tests/smoke/smoke.py`)
 - `password.js`: regras de senha e de e-mail do cadastro, testadas em `tests/`

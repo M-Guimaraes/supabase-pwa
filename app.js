@@ -332,7 +332,7 @@
     const next = ymd(new Date(state.month.getFullYear(), state.month.getMonth() + 1, 1));
     const { data, error } = await sb
       .from('transactions')
-      .select('id, type, amount, description, occurred_on, category_id, household_id, payer_share')
+      .select('id, type, amount, description, occurred_on, category_id, household_id, payer_share, kind')
       .eq('user_id', state.userId)
       .gte('occurred_on', start)
       .lt('occurred_on', next)
@@ -375,7 +375,7 @@
     for (let from = 0; from < 20000; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('id, type, amount, description, occurred_on, category_id, created_at, household_id, payer_share')
+        .select('id, type, amount, description, occurred_on, category_id, created_at, household_id, payer_share, kind')
         .eq('user_id', state.userId)
         .gte('occurred_on', start)
         .lt('occurred_on', next)
@@ -537,7 +537,7 @@
     for (let from = 0; from < 20000; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('id, type, amount, description, category_id, occurred_on, created_at, household_id, payer_share')
+        .select('id, type, amount, description, category_id, occurred_on, created_at, household_id, payer_share, kind')
         .eq('user_id', state.userId)
         .gte('occurred_on', since)
         .order('occurred_on')
@@ -714,6 +714,7 @@
           id: item.id, type: item.type, amount: item.amount, description: item.description,
           category_id: item.category_id, occurred_on: item.occurred_on, created_at: item.created_at,
           household_id: item.household_id || null, payer_share: item.household_id ? item.payer_share : null,
+          kind: item.kind || null,
         };
         const send = (r) => sb.from('transactions').upsert(r, { onConflict: 'id', ignoreDuplicates: true });
         let { error } = await send(row);
@@ -987,7 +988,7 @@
     for (let from = 0; from < 20000; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('type, amount, occurred_on, category_id')
+        .select('type, amount, occurred_on, category_id, kind')
         .eq('user_id', state.userId)
         .gte('occurred_on', start)
         .lt('occurred_on', next)
@@ -1018,7 +1019,7 @@
     const year = state.trendRange === 'year';
     const now = new Date();
     fillTrendCategories();
-    const pick = (rows) => Trend.filterByCategory(rows.concat(pendingList()), state.trendCategory);
+    const pick = (rows) => Trend.filterByCategory(rows.concat(pendingList()).filter(Movements.counts), state.trendCategory);
     let series;
     if (year) {
       series = Trend.monthlySeries(pick(state.yearRows[state.trendYear] || state.trendRows), new Date(state.trendYear, 11, 1), 12);
@@ -1033,7 +1034,7 @@
     $('trend-note').hidden = !(year && state.yearPartial);
     $('trend-note').textContent = 'Sem conexão: mostrando só o que está salvo neste aparelho (últimos 6 meses).';
     // o painel só some quando não há nada na visão de 6 meses e o usuário não está olhando o ano
-    const seriesRecent = Trend.monthlySeries(state.trendRows.concat(pendingList()), now);
+    const seriesRecent = Trend.monthlySeries(state.trendRows.concat(pendingList()).filter(Movements.counts), now);
     $('trend').hidden = !(Trend.hasData(seriesRecent) || year);
     if ($('trend').hidden) return;
     state.trendSeries = series;
@@ -1146,11 +1147,22 @@
     return state.partnerCategories.get(t.category_id) || 'Sem categoria';
   }
 
+  // Pagamento de fatura, aplicações e resgates: ficam fora dos totais, mas aparecem aqui.
+  function renderMovesNote(outside) {
+    const parts = [];
+    if (outside && outside.cardPayment > 0) parts.push(`fatura paga ${brl.format(outside.cardPayment)}`);
+    if (outside && outside.invested > 0) parts.push(`aplicado ${brl.format(outside.invested)}`);
+    if (outside && outside.redeemed > 0) parts.push(`resgatado ${brl.format(outside.redeemed)}`);
+    $('moves-note').hidden = parts.length === 0;
+    $('moves-note').textContent = parts.length ? `Fora do resumo: ${parts.join(' · ')}.` : '';
+  }
+
   function renderSummary() {
     const scope = summaryScope();
     const casal = scope === 'casal';
     const partner = state.household && state.household.partner;
-    const rows = Household.filterScope(scope, state.transactions, sharedOfMonth());
+    const rows = Household.filterScope(scope, state.transactions, sharedOfMonth()).filter(Movements.counts);
+    renderMovesNote(scope === 'all' ? Movements.summarize(state.transactions).outside : null);
 
     $('scope-filter').hidden = !partner;
     const radio = document.querySelector(`input[name="scope"][value="${scope}"]`);
@@ -1273,12 +1285,12 @@
       group.append(el('h3', '', dayFmt.format(parseYmd(day))));
       for (const t of items) {
         const selected = state.selecting && state.selected.has(t.id);
-        const btn = el('button', `tx ${t.type}${selected ? ' selected' : ''}`);
+        const btn = el('button', `tx ${t.type}${t.kind ? ' neutral' : ''}${selected ? ' selected' : ''}`);
         btn.type = 'button';
         const info = el('span', 'info');
         info.append(
           el('span', 'title', t.description || categoryName(t.category_id)),
-          el('span', 'sub', Household.isShared(t) ? `${categoryName(t.category_id)} · Casal ${Household.splitLabel(t.payer_share)}` : categoryName(t.category_id))
+          el('span', 'sub', t.kind ? `${Movements.KIND_LABELS[t.kind]} · fora do resumo` : Household.isShared(t) ? `${categoryName(t.category_id)} · Casal ${Household.splitLabel(t.payer_share)}` : categoryName(t.category_id))
         );
         const sign = t.type === 'income' ? '+ ' : '− ';
         if (state.selecting && !t.pending) {
@@ -1522,6 +1534,7 @@
     let income = 0;
     let expense = 0;
     for (const t of state.listTx) {
+      if (!Movements.counts(t)) continue;
       if (t.type === 'income') income += t.amount; else expense += t.amount;
     }
     const box = $('period-totals');
@@ -1630,7 +1643,7 @@
   const fmtPct = (n) => String(Math.round(n * 100) / 100).replace('.', ',');
 
   // Controles "Compartilhar com o casal" do formulário de lançamento e do de lançamento fixo.
-  function shareUI(prefix, getType, amountId) {
+  function shareUI(prefix, getType, amountId, allowed) {
     const box = $(`${prefix}-share-box`);
     const check = $(`${prefix}-share`);
     const area = $(`${prefix}-share-split`);
@@ -1646,7 +1659,7 @@
     other.value = 'custom';
     select.append(other);
 
-    const available = () => !!(state.household && state.household.partner) && getType() === 'expense';
+    const available = () => !!(state.household && state.household.partner) && getType() === 'expense' && (!allowed || allowed());
     const share = () => (select.value === 'custom' ? Household.parseShare(custom.value) : Number(select.value));
 
     function update() {
@@ -1695,7 +1708,7 @@
     };
   }
 
-  const txShare = shareUI('tx', () => document.querySelector('input[name="type"]:checked').value, 'tx-amount');
+  const txShare = shareUI('tx', () => document.querySelector('input[name="type"]:checked').value, 'tx-amount', () => !$('tx-kind').value);
   const recShare = shareUI('rec', () => document.querySelector('input[name="rtype"]:checked').value, 'rec-amount');
 
   document.querySelectorAll('input[name="scope"]').forEach((r) =>
@@ -1973,6 +1986,26 @@
     showHint('');
   });
 
+  function updateKindHint() {
+    const kind = $('tx-kind').value;
+    $('tx-kind-hint').textContent = kind ? `${Movements.KIND_LABELS[kind]}: não conta como gasto nem receita no Resumo.` : '';
+    $('tx-kind-hint').hidden = !kind;
+  }
+
+  // Lançamento novo: se a descrição parece pagamento de fatura ou investimento, já sugere o tipo.
+  $('tx-desc').addEventListener('input', () => {
+    if (state.editing || state.kindTouched) return;
+    $('tx-kind').value = Movements.detect($('tx-desc').value, currentType()) || '';
+    updateKindHint();
+    txShare.update();
+  });
+
+  $('tx-kind').addEventListener('change', () => {
+    state.kindTouched = true;
+    updateKindHint();
+    txShare.update();
+  });
+
   $('tx-repeat').addEventListener('click', () => {
     const last = state.hints && state.hints.last;
     if (!last) return;
@@ -2015,6 +2048,9 @@
     const inViewedMonth =
       today.getFullYear() === state.month.getFullYear() && today.getMonth() === state.month.getMonth();
     $('tx-date').value = tx ? tx.occurred_on : ymd(inViewedMonth ? today : state.month);
+    $('tx-kind').value = tx && tx.kind ? tx.kind : '';
+    state.kindTouched = !!tx;
+    updateKindHint();
     txShare.open(tx);
 
     sheet.showModal();
@@ -2054,7 +2090,9 @@
       category_id: $('tx-category').value || null,
       occurred_on: date,
     };
-    const share = txShare.read();
+    payload.kind = $('tx-kind').value || null;
+    // movimentação não se divide com o casal
+    const share = payload.kind ? { household_id: null, payer_share: null } : txShare.read();
     if (share.error) { errorBox.textContent = share.error; errorBox.hidden = false; return; }
     payload.household_id = share.household_id;
     payload.payer_share = share.payer_share;
@@ -2112,8 +2150,42 @@
     focusListOn(date);
     const owed = payload.household_id && payload.type === 'expense' ? Household.owedByPartner(payload) : 0;
     toast(owed > 0 ? `Salvo. ${partnerName()} deve ${brl.format(owed)} a você.` : 'Lançamento salvo');
+    if (payload.kind && payload.description) await markSimilar(payload);
     await refresh();
   });
+
+  // Depois de marcar um lançamento como movimentação, oferece marcar os parecidos de uma vez
+  // (mesma descrição e tipo, ainda normais), por exemplo todos os Pix para a mesma pessoa.
+  async function markSimilar(payload) {
+    try {
+      const key = Movements.groupKey(payload.description);
+      if (!key) return;
+      const ids = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data, error } = await sb
+          .from('transactions')
+          .select('id, description')
+          .eq('user_id', state.userId)
+          .eq('type', payload.type)
+          .is('kind', null)
+          .order('id')
+          .range(from, from + 999);
+        if (error) throw error;
+        for (const t of data) if (t.description && Movements.groupKey(t.description) === key) ids.push(t.id);
+        if (data.length < 1000) break;
+      }
+      const mine = state.editing ? ids.filter((id) => id !== state.editing.id) : ids;
+      if (mine.length === 0) return;
+      if (!confirm(`Marcar também os ${mine.length} lançamentos parecidos com "${payload.description}" como ${Movements.KIND_LABELS[payload.kind].toLowerCase()}?`)) return;
+      for (let i = 0; i < mine.length; i += 80) {
+        const { error } = await sb.from('transactions').update({ kind: payload.kind, household_id: null, payer_share: null }).eq('user_id', state.userId).in('id', mine.slice(i, i + 80));
+        if (error) throw error;
+      }
+      toast(`${mine.length} lançamentos marcados`);
+    } catch (err) {
+      toast(friendlyError(err));
+    }
+  }
 
   $('tx-delete').addEventListener('click', async () => {
     if (!state.editing) return;
@@ -2766,7 +2838,7 @@
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb
         .from('transactions')
-        .select('id, type, amount, description, occurred_on, category_id')
+        .select('id, type, amount, description, occurred_on, category_id, kind')
         .eq('user_id', state.userId)
         .order('occurred_on', { ascending: false })
         .order('id')
@@ -3099,6 +3171,7 @@
     let expense = 0;
     for (const i of imp.selected) {
       const v = Importer.view(imp.items[i], imp.invert);
+      if (Movements.detect(imp.items[i].description, v.type)) continue;
       if (v.type === 'income') income += v.amount; else expense += v.amount;
     }
     $('import-totals').textContent =
@@ -3138,9 +3211,11 @@
       const text = el('span', 'import-text');
       const cardMatch = imp.cardMatch.get(i);
       const cardName = cardMatch && (state.cards.find((c) => c.id === cardMatch.card_id) || {}).name;
+      const moveKind = !dup && !cardMatch ? Movements.detect(item.description, v.type) : null;
       const note = dup
         ? (imp.existing.has(item.externalId) ? 'Já importado' : 'Já importado de outro arquivo')
         : cardMatch ? `Pagamento da fatura${cardName ? ` do ${cardName}` : ''} — não importa como despesa`
+        : moveKind ? `${Movements.KIND_LABELS[moveKind]} — fica fora do resumo`
         : similar ? 'Parecido com um lançamento seu' : '';
       const subText = () => {
         const src = imp.source.get(i);
@@ -3441,6 +3516,7 @@
         category_id: imp.category.get(i) || null,
         occurred_on: item.date,
         external_id: item.externalId,
+        kind: Movements.detect(item.description, v.type),
       });
     });
     if (rows.length === 0 && invoicePayments.length === 0) return;
@@ -3489,6 +3565,139 @@
     await refresh();
   });
 
+  /* ---------- Revisar movimentações ---------- */
+
+  const movesSheet = $('moves-sheet');
+  closeOnOutside(movesSheet);
+  const monthYear = new Intl.DateTimeFormat('pt-BR', { month: 'short', year: 'numeric' });
+  let moves = { rows: [], groups: [], checked: new Set() };
+
+  async function loadAllNormal() {
+    const rows = [];
+    for (let from = 0; from < 50000; from += 1000) {
+      const { data, error } = await sb
+        .from('transactions')
+        .select('id, type, amount, description, occurred_on, kind')
+        .eq('user_id', state.userId)
+        .is('kind', null)
+        .order('occurred_on', { ascending: false })
+        .order('id')
+        .range(from, from + 999);
+      if (error) throw error;
+      rows.push(...data.map((t) => ({ ...t, amount: Number(t.amount) })));
+      if (data.length < 1000) break;
+    }
+    return rows;
+  }
+
+  function renderMoves() {
+    const list = $('moves-list');
+    list.replaceChildren();
+    moves.groups.forEach((g, i) => {
+      const li = el('li', `import-row ${g.type} neutral`);
+      const label = el('label', 'import-main');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = moves.checked.has(i);
+      box.addEventListener('change', () => {
+        if (box.checked) moves.checked.add(i); else moves.checked.delete(i);
+        renderMovesImpact();
+      });
+      const text = el('span', 'import-text');
+      const first = new Date(`${g.months[0]}-01T12:00:00`);
+      const last = new Date(`${g.months[g.months.length - 1]}-01T12:00:00`);
+      const span = g.months.length > 1 ? `${monthYear.format(first)} a ${monthYear.format(last)}` : monthYear.format(first);
+      text.append(
+        el('span', 'title', g.label || 'Sem descrição'),
+        el('span', 'sub', `${Movements.KIND_LABELS[g.kind]} · ${plural(g.count, 'lançamento', 'lançamentos')} · ${span}`)
+      );
+      label.append(box, text, el('span', 'amount', (g.type === 'income' ? '+ ' : '− ') + brl.format(g.total)));
+      li.append(label);
+      list.append(li);
+    });
+    renderMovesImpact();
+  }
+
+  function renderMovesImpact() {
+    const chosen = moves.groups.filter((g, i) => moves.checked.has(i));
+    const n = chosen.reduce((s, g) => s + g.count, 0);
+    $('moves-apply').disabled = n === 0;
+    $('moves-apply').textContent = n ? `Marcar ${plural(n, 'lançamento', 'lançamentos')}` : 'Marcar';
+    const ul = $('moves-impact-list');
+    ul.replaceChildren();
+    const months = Movements.impact(moves.rows, chosen).slice(0, 6);
+    $('moves-impact').hidden = months.length === 0 || n === 0;
+    for (const m of months) {
+      const changed = m.before.expense !== m.after.expense || m.before.income !== m.after.income;
+      if (!changed) continue;
+      const li = el('li');
+      const when = new Date(`${m.month}-01T12:00:00`);
+      const line = (label, before, after) => {
+        const row = el('span');
+        row.append(`${label} `);
+        if (before !== after) row.append(el('b', 'was', brl.format(before)));
+        row.append(el('b', '', brl.format(after)));
+        return row;
+      };
+      li.append(el('strong', '', monthYear.format(when)), line('Despesas', m.before.expense, m.after.expense), line('Receitas', m.before.income, m.after.income));
+      ul.append(li);
+    }
+    if (!ul.children.length) $('moves-impact').hidden = true;
+  }
+
+  $('moves-open').addEventListener('click', async () => {
+    if (!requireOnline('revisar as movimentações')) return;
+    $('moves-error').hidden = true;
+    $('moves-list').replaceChildren();
+    $('moves-impact').hidden = true;
+    $('moves-apply').disabled = true;
+    $('moves-apply').textContent = 'Marcar';
+    $('moves-intro').textContent = 'Lendo os seus lançamentos…';
+    movesSheet.showModal();
+    try {
+      const rows = await loadAllNormal();
+      const groups = Movements.suggest(rows);
+      moves = { rows, groups, checked: new Set(groups.map((g, i) => i)) };
+      $('moves-intro').textContent = groups.length
+        ? 'Estes lançamentos parecem pagamento de fatura, investimento ou transferência entre contas. Marcados, saem dos totais do Resumo, mas continuam na lista. Desmarque o que for gasto ou receita de verdade.'
+        : 'Nenhum lançamento parece pagamento de fatura, investimento ou transferência. Se algum estiver errado, abra o lançamento e mude o "Tipo de movimento".';
+      renderMoves();
+    } catch (err) {
+      $('moves-intro').textContent = '';
+      $('moves-error').textContent = friendlyError(err);
+      $('moves-error').hidden = false;
+    }
+  });
+
+  $('moves-cancel').addEventListener('click', () => movesSheet.close());
+
+  $('moves-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const chosen = moves.groups.filter((g, i) => moves.checked.has(i));
+    if (chosen.length === 0) return;
+    const save = $('moves-apply');
+    save.disabled = true;
+    try {
+      let done = 0;
+      for (const kind of ['card_payment', 'transfer']) {
+        const ids = chosen.filter((g) => g.kind === kind).flatMap((g) => g.ids);
+        for (let i = 0; i < ids.length; i += 80) {
+          const part = ids.slice(i, i + 80);
+          const { error } = await sb.from('transactions').update({ kind, household_id: null, payer_share: null }).eq('user_id', state.userId).in('id', part);
+          if (error) throw error;
+          done += part.length;
+        }
+      }
+      movesSheet.close();
+      toast(`${plural(done, 'lançamento marcado', 'lançamentos marcados')}. O Resumo já não conta esses valores.`);
+      await refresh();
+    } catch (err) {
+      $('moves-error').textContent = friendlyError(err) + ' O que já foi marcado fica; rode a revisão de novo para o resto.';
+      $('moves-error').hidden = false;
+      save.disabled = false;
+    }
+  });
+
   /* ---------- Cartão de crédito ---------- */
 
   function renderCards() {
@@ -3511,9 +3720,11 @@
         const status = inv.paid_on
           ? `Paga em ${fmtDate(inv.paid_on)}`
           : 'Em aberto';
+        // O PDF é uma fatura só para todos os cartões; o total é o mesmo em cada um.
+        const shared = state.cardInvoices.some((o) => o.id !== inv.id && o.due_on === inv.due_on);
         text.append(
           el('span', 'title', `Vencimento ${fmtDate(inv.due_on)}`),
-          el('span', `sub ${inv.paid_on ? 'paid' : 'open'}`, `${brl.format(inv.total)} · ${status}`)
+          el('span', `sub ${inv.paid_on ? 'paid' : 'open'}`, `${shared ? 'Fatura de todos os cartões ' : ''}${brl.format(inv.total)} · ${status}`)
         );
         const view = el('button', 'btn small', 'Ver');
         view.type = 'button';
@@ -3612,7 +3823,8 @@
       ? `Paga em ${fmtDate(invoice.paid_on)} (${brl.format(invoice.paid_amount)})`
       : 'Em aberto';
     $('invoice-meta').textContent =
-      `Vencimento ${fmtDate(invoice.due_on)} · Total ${brl.format(invoice.total)} · ${status}`;
+      `Vencimento ${fmtDate(invoice.due_on)} · Total da fatura ${brl.format(invoice.total)} · ${status}`;
+    $('invoice-check').hidden = true;
     const box = $('invoice-groups');
     box.replaceChildren();
     invoiceSheet.showModal();
@@ -3624,6 +3836,7 @@
       .order('occurred_on');
     if (error) { toast(friendlyError(error)); return; }
     const rows = data.map((t) => ({ ...t, amount: Number(t.amount) }));
+    showInvoiceCheck(invoice, rows);
     if (rows.length === 0) { box.append(el('p', 'empty', 'Nenhuma compra nesta fatura.')); return; }
 
     const byDay = new Map();
@@ -3648,6 +3861,30 @@
       }
       box.append(group);
     }
+  }
+
+  // Conferência: as compras importadas deveriam fechar com o total da fatura.
+  async function showInvoiceCheck(invoice, rows) {
+    const mine = rows.reduce((s, t) => s + t.amount, 0);
+    const ids = state.cardInvoices.filter((i) => i.due_on === invoice.due_on).map((i) => i.id);
+    let all = mine;
+    if (ids.length > 1) {
+      all = 0;
+      for (let i = 0; i < ids.length; i += 80) {
+        const { data, error } = await sb.from('transactions').select('amount').eq('user_id', state.userId).in('card_invoice_id', ids.slice(i, i + 80));
+        if (error) return;
+        for (const t of data) all += Number(t.amount);
+      }
+    }
+    if (openInvoice !== invoice) return;
+    const diff = Math.round((all - invoice.total) * 100) / 100;
+    const parts = [`Compras deste cartão: ${brl.format(mine)} (${rows.length}).`];
+    if (ids.length > 1) parts.push(`Somando todos os cartões: ${brl.format(all)}.`);
+    parts.push(Math.abs(diff) < 0.01
+      ? 'Bate com o total da fatura.'
+      : `A fatura fecha em ${brl.format(invoice.total)}: diferença de ${brl.format(Math.abs(diff))}, que pode ser crédito ou estorno que o app não lê.`);
+    $('invoice-check').textContent = parts.join(' ');
+    $('invoice-check').hidden = false;
   }
 
   $('invoice-close').addEventListener('click', () => invoiceSheet.close());

@@ -287,6 +287,9 @@ main { padding: 0 1rem; }
 
 /* Casal: saldo, totais do mês e controles de divisão (só tokens de design-tokens.css) */
 .scope-filter { margin-bottom: 1rem; max-width: 22rem; }
+.moves-note { margin: 0.6rem 0 0; font-size: 0.8125rem; color: var(--ink-soft); }
+.tx.neutral .amount, .tx.neutral .title { color: var(--ink-soft); }
+.tx.neutral .dot { background: var(--line-strong); }
 .charge {
   margin-bottom: 0.9rem;
   padding: 0.85rem 0.95rem;
@@ -915,3 +918,10 @@ main { padding: 0 1rem; }
 @media (min-width: 960px) {
   .topbar-title { grid-column: 1; text-align: left; font-size: 1.25rem; }
 }
+
+/* ---------- Revisar movimentações ---------- */
+.moves-impact { margin-top: 0.9rem; }
+.moves-impact .cat-list li { display: grid; gap: 0.15rem; padding: 0.55rem 0.9rem; }
+.moves-impact .cat-list b { font-variant-numeric: tabular-nums; }
+.moves-impact .was { color: var(--ink-soft); text-decoration: line-through; margin-right: 0.35rem; font-weight: 400; }
+.import-row.neutral .amount { color: var(--ink-soft); }

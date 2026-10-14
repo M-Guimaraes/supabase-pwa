@@ -1,4 +1,4 @@
-const CACHE = 'caixa-v30';
+const CACHE = 'caixa-v31';
 const SHELL = [
   './',
   'index.html',
@@ -14,6 +14,7 @@ const SHELL = [
   'period.js',
   'trend.js',
   'household.js',
+  'movements.js',
   'offline.js',
   'app.js',
   'manifest.webmanifest',
