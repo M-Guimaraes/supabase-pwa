@@ -1,0 +1,9 @@
+{
+  "name": "caixa",
+  "private": true,
+  "description": "Testes do Caixa. O app não tem build: os arquivos são servidos como estão.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:smoke": "python3 tests/smoke/smoke.py"
+  }
+}
