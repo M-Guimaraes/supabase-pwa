@@ -1,4 +1,4 @@
-const CACHE = 'caixa-v32';
+const CACHE = 'caixa-v33';
 const SHELL = [
   './',
   'index.html',
@@ -33,7 +33,11 @@ const SHELL = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())
+    // cache: 'reload' ignora o cache HTTP do navegador: sem isso, uma versão nova pode ser
+    // instalada com arquivos da anterior (o GitHub Pages manda guardar por 10 minutos).
+    caches.open(CACHE)
+      .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -57,7 +61,9 @@ self.addEventListener('fetch', (event) => {
   // Arquivos do app: rede primeiro (pega novidades), cache se estiver offline.
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(req)
+      // 'no-cache' confere com o servidor a cada vez (resposta 304 quando nada mudou), para
+      // index.html e app.js nunca virem de versões diferentes depois de uma publicação.
+      fetch(req.url, { cache: 'no-cache' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((cache) => cache.put(req, copy));
