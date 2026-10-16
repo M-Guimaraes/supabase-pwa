@@ -49,8 +49,10 @@ O esquema do banco está em `supabase/schema.sql`. A chave usada em `app.js` é 
 - `index.html`, `styles.css`, `app.js`: o app
 - `household.js`: saldo e divisão dos gastos do casal (testes em `tests/`)
 - `movements.js`: detecta pagamento de fatura, investimentos e transferências (testes em `tests/`)
-- `importer.js`: leitor de extratos OFX e CSV (testes em `tests/`, rodar com `node --test`)
-- `tests/smoke/`: teste de fumaça no navegador com Supabase de mentira (`python3 tests/smoke/smoke.py`)
+- `importer.js`: leitor de extratos OFX e CSV (testes em `tests/`, rodar com `npm test`)
+- `tests/smoke/`: teste de fumaça no navegador com Supabase de mentira (`python3 tests/smoke/smoke.py`; `CHROMIUM_PATH` aponta para um Chromium já instalado)
+- `.github/workflows/test.yml`: roda os dois testes em todo push na `main` e em todo pull request
+- `vendor/`: supabase-js e pdf.js copiados do npm, com versão fixa (veja `vendor/README.md` para atualizar)
 - `password.js`: regras de senha e de e-mail do cadastro, testadas em `tests/`
 - `quick.js`: sugestões e atalhos para digitar menos, testados em `tests/`
 - `classifier.js`: regras e escolha da categoria, testados em `tests/`

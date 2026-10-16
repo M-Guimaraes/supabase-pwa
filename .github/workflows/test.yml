@@ -1,0 +1,38 @@
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Testes unitários
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - name: Confere as cópias em vendor/
+        run: |
+          cd vendor
+          echo "59d39487c3589843b410322d8a3d562ce022aba1e5ccb16898ef3fb2a0da2ecd  supabase-js-2.117.2.js" | sha256sum -c
+          echo "f401927e692efc7735e0cd528c490d0dd31b7f0972c122b7040df805be45cce4  pdfjs-6.3.289/pdf.min.mjs" | sha256sum -c
+          echo "a33cfe728c584fdba4fcc1fd54bcdc2f9f2f13889ddbb5b2bd1d0f8cbe49b84e  pdfjs-6.3.289/pdf.worker.min.mjs" | sha256sum -c
+
+  smoke:
+    name: Teste de fumaça no navegador
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install playwright==1.64.0
+      - run: python -m playwright install --with-deps chromium
+      - run: python tests/smoke/smoke.py

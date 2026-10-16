@@ -23,13 +23,30 @@ def go_settings(page):
     page.click('[data-tab=categories]')
     page.evaluate("document.querySelectorAll('details.group').forEach(d => d.open = true)")
 
+def tiny_pdf(text):
+    """PDF de uma página com uma linha de texto, montado à mão (sem dependências)."""
+    stream = ('BT /F1 18 Tf 72 720 Td (%s) Tj ET' % text).encode()
+    objs = [b'<< /Type /Catalog /Pages 2 0 R >>',
+            b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+            b'<< /Length %d >>\nstream\n' % len(stream) + stream + b'\nendstream',
+            b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+    out = b'%PDF-1.4\n'; offs = []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out)); out += b'%d 0 obj\n' % i + o + b'\nendobj\n'
+    xref = len(out)
+    out += b'xref\n0 %d\n0000000000 65535 f \n' % (len(objs) + 1) + b''.join(b'%010d 00000 n \n' % o for o in offs)
+    out += b'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(objs) + 1, xref)
+    return out
+
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    # CHROMIUM_PATH: usar um Chromium já instalado em vez do baixado pelo Playwright.
+    b = p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
     ctx = b.new_context(viewport={'width': 390, 'height': 800}, accept_downloads=True, service_workers='block')
     page = ctx.new_page()
     page.on('pageerror', lambda e: problems.append('pageerror: ' + str(e)))
     page.on('console', lambda m: m.type == 'error' and problems.append('console: ' + m.text))
-    page.route('https://cdn.jsdelivr.net/**', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
+    page.route('**/vendor/supabase-js-*.js', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
     page.goto('http://127.0.0.1:8124/index.html')
     page.wait_for_selector('#app:not([hidden])')
     page.wait_for_timeout(500)
@@ -185,7 +202,7 @@ with sync_playwright() as p:
     page.click('[data-tab=cards]')
     page.click('#card-import-open'); page.wait_for_selector('#card-import-sheet[open]')
     check(page.is_disabled('#card-import-submit'), 'importar fatura começa desabilitado, sem arquivo')
-    page.click('#card-import-cancel')
+    page.click('#card-import-cancel'); page.wait_for_timeout(400)  # espera a animação de saída
     check(page.is_hidden('#card-import-sheet[open]'), 'cancelar fecha a folha de importar fatura')
     # excluir fatura e cartão (as compras saem junto)
     page.evaluate("""
@@ -326,7 +343,7 @@ with sync_playwright() as p:
     p2.on('pageerror', lambda e: problems.append('pageerror: ' + str(e)))
     p2.on('console', lambda m: m.type == 'error' and problems.append('console: ' + m.text))
     p2.add_init_script('window.__noSession = true')
-    p2.route('https://cdn.jsdelivr.net/**', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
+    p2.route('**/vendor/supabase-js-*.js', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
     p2.goto('http://127.0.0.1:8124/index.html'); p2.wait_for_selector('#auth:not([hidden])')
     check(p2.is_hidden('#auth-confirm-row') and p2.is_hidden('#password-rules'), 'login não mostra confirmação nem requisitos')
     p2.click('#auth-toggle')
@@ -364,7 +381,7 @@ with sync_playwright() as p:
     p3.on('pageerror', lambda e: problems.append('pageerror: ' + str(e)))
     p3.on('console', lambda m: m.type == 'error' and problems.append('console: ' + m.text))
     p3.add_init_script('window.__seed = ' + json.dumps(seed))
-    p3.route('https://cdn.jsdelivr.net/**', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
+    p3.route('**/vendor/supabase-js-*.js', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
     p3.goto('http://127.0.0.1:8124/index.html'); p3.wait_for_selector('#app:not([hidden])'); p3.wait_for_timeout(500)
     check(p3.is_visible('#household-panel'), 'painel do casal aparece no Resumo')
     check('Você deve R$ 25,00 a Beto' in p3.inner_text('#household-balance').replace('\xa0', ' '), 'saldo: ' + p3.inner_text('#household-balance').replace('\xa0', ' '))
@@ -464,7 +481,7 @@ with sync_playwright() as p:
     p4.on('pageerror', lambda e: problems.append('pageerror: ' + str(e)))
     p4.on('console', lambda m: m.type == 'error' and problems.append('console: ' + m.text))
     p4.add_init_script('window.__seed = ' + json.dumps(seed4))
-    p4.route('https://cdn.jsdelivr.net/**', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
+    p4.route('**/vendor/supabase-js-*.js', lambda r: r.fulfill(body=stub, content_type='application/javascript'))
     p4.goto('http://127.0.0.1:8124/index.html'); p4.wait_for_selector('#app:not([hidden])'); p4.wait_for_timeout(500)
     nb4 = lambda sel: p4.inner_text(sel).replace('\xa0', ' ')
     # antes da revisão: só m3, m4, m5 estão marcados; m6..m9 ainda contam
@@ -523,5 +540,11 @@ with sync_playwright() as p:
         p4.click('#export-all')
     csv4 = open(dl.value.path(), encoding='utf-8').read()
     check('Movimento' in csv4.splitlines()[0] and 'Pagamento de fatura' in csv4, 'CSV exportado tem a coluna Movimento')
+    # PDF: o pdf.js (vendor/) carrega sob a CSP, lê o texto e o app responde que não conhece o layout
+    go_settings(p4); p4.click('#import-open'); p4.wait_for_selector('#import-sheet[open]')
+    p4.set_input_files('#import-file', files=[{'name': 'x.pdf', 'mimeType': 'application/pdf', 'buffer': tiny_pdf('EXTRATO DE TESTE 123')}])
+    p4.wait_for_selector('#import-error:not([hidden])', timeout=15000)
+    check('Não reconheci o layout' in nb4('#import-error'), 'PDF lido pelo pdf.js: ' + nb4('#import-error'))
     b.close()
 print('\nPROBLEMAS:' if problems else '\nTudo certo'); [print(' -', x) for x in problems]
+sys.exit(1 if problems else 0)

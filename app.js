@@ -8,11 +8,19 @@
 
   const $ = (id) => document.getElementById(id);
 
-  // Script inline é bloqueado pelo CSP (script-src sem 'unsafe-inline'), então essa
-  // configuração do pdf.js precisa estar num arquivo externo, não no index.html.
-  if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  // pdf.js (cópia em vendor/) só é carregado quando alguém importa um PDF: são mais de
+  // 1,5 MB que o resto do app não usa.
+  const PDFJS_DIR = 'vendor/pdfjs-6.3.289/';
+  let pdfjsLoading = null;
+  function loadPdfjs() {
+    if (!pdfjsLoading) {
+      pdfjsLoading = import(new URL(PDFJS_DIR + 'pdf.min.mjs', document.baseURI).href).then((lib) => {
+        lib.GlobalWorkerOptions.workerSrc = new URL(PDFJS_DIR + 'pdf.worker.min.mjs', document.baseURI).href;
+        return lib;
+      });
+      pdfjsLoading.catch(() => { pdfjsLoading = null; });
+    }
+    return pdfjsLoading;
   }
 
   const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -3455,7 +3463,9 @@
 
   // Junta o texto do PDF inteiro em linhas, pra Importer ler como se fosse texto puro.
   async function extractPdfText(buffer) {
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const pdfjsLib = await loadPdfjs();
+    // isEvalSupported: false fecha a brecha da CVE-2024-4367 (fonte maliciosa no PDF).
+    const pdf = await pdfjsLib.getDocument({ data: buffer, isEvalSupported: false }).promise;
     const lines = [];
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p);

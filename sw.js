@@ -1,9 +1,10 @@
-const CACHE = 'caixa-v31';
+const CACHE = 'caixa-v32';
 const SHELL = [
   './',
   'index.html',
   'design-tokens.css',
   'styles.css',
+  'vendor/supabase-js-2.117.2.js',
   'importer.js',
   'recurring.js',
   'budget.js',
@@ -52,20 +53,6 @@ self.addEventListener('fetch', (event) => {
 
   // Dados e login do Supabase: sempre pela rede, nunca em cache.
   if (url.hostname.endsWith('.supabase.co')) return;
-
-  // Biblioteca do CDN: usa a cópia guardada e atualiza em segundo plano.
-  if (url.hostname === 'cdn.jsdelivr.net') {
-    event.respondWith(
-      caches.open(CACHE).then(async (cache) => {
-        const cached = await cache.match(req);
-        const network = fetch(req)
-          .then((res) => { cache.put(req, res.clone()); return res; })
-          .catch(() => cached);
-        return cached || network;
-      })
-    );
-    return;
-  }
 
   // Arquivos do app: rede primeiro (pega novidades), cache se estiver offline.
   if (url.origin === self.location.origin) {
